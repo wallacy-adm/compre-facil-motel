@@ -35,8 +35,7 @@ const LS = {
   remove:(k)=>{ try{ localStorage.removeItem(k); }catch{} },
 };
 
-// ⚠️ LOVABLE: adicione o logo como asset e substitua a URL abaixo
-const LOGO = "/logo.jpg";
+const LOGO = "/logo.svg";
 
 // ── CONSTANTES ────────────────────────────────────────────────────────────
 const ROLES = {
@@ -263,7 +262,7 @@ const ApprovalPanel = memo(({ orders, onApprove, onReject, onDelete, userRole })
   const initDecisions = useCallback((order) => {
     if (decisions[order.id]) return;
     const d = {};
-    order.items.forEach(it => { d[it.id] = it.itemStatus !== "recusado"; });
+    (order.items||[]).forEach(it => { d[it.id] = it.itemStatus !== "recusado"; });
     setDecisions(p => ({...p, [order.id]: d}));
   }, [decisions]);
 
@@ -419,14 +418,14 @@ const RelatorioTab = memo(({ orders, users }) => {
     const hoje=new Date(); const dias=rankPeriod==="todos"?99999:parseInt(rankPeriod);
     const base=ordersSetor.filter(o=>{ if(rankPeriod==="todos") return true; const dt=parseDate(o.createdDate); return dt&&(hoje-dt)/(1000*60*60*24)<=dias; });
     const m={};
-    base.forEach(o=>o.items.forEach(it=>{ const k=it.name.trim().toLowerCase(); if(!m[k]) m[k]={name:it.name.trim(),count:0}; m[k].count++; }));
+    base.forEach(o=>(o.items||[]).forEach(it=>{ const k=it.name.trim().toLowerCase(); if(!m[k]) m[k]={name:it.name.trim(),count:0}; m[k].count++; }));
     return Object.values(m).sort((a,b)=>b.count-a.count).slice(0,8);
   },[ordersSetor,rankPeriod]);
 
   // ── Comparação ────────────────────────────────────────────────────────
   const compData = useMemo(()=>{
     if(!mesAFinal||!mesBFinal) return [];
-    const contarItens=(mesKey)=>{ const m={}; ordersSetor.filter(o=>getMesKey(o.createdDate)===mesKey).forEach(o=>o.items.forEach(it=>{ const k=it.name.trim().toLowerCase(); if(!m[k]) m[k]={name:it.name.trim(),count:0}; m[k].count++; })); return m; };
+    const contarItens=(mesKey)=>{ const m={}; ordersSetor.filter(o=>getMesKey(o.createdDate)===mesKey).forEach(o=>(o.items||[]).forEach(it=>{ const k=it.name.trim().toLowerCase(); if(!m[k]) m[k]={name:it.name.trim(),count:0}; m[k].count++; })); return m; };
     const mA=contarItens(mesAFinal); const mB=contarItens(mesBFinal);
     const keys=new Set([...Object.keys(mA),...Object.keys(mB)]);
     return [...keys].map(k=>({ name:(mA[k]||mB[k]).name, a:mA[k]?.count||0, b:mB[k]?.count||0 }))
@@ -672,7 +671,7 @@ const PendentesTab = memo(({ orders }) => {
     const list=[];
     orders.forEach(o=>{
       if(o.status!=="aprovado") return;
-      o.items.forEach(it=>{
+      (o.items||[]).forEach(it=>{
         if(!it.done && it.itemStatus!=="recusado"){
           list.push({...it, orderId:o.id, sectorLabel:o.sectorLabel, createdAt:o.createdAt, priority:o.priority, destino:o.destino});
         }
@@ -712,7 +711,7 @@ const RecusadosTab = memo(({ orders, onApproveItem, onDeleteItem }) => {
   const itensRecusados = useMemo(()=>{
     const list=[];
     orders.forEach(o=>{
-      o.items.forEach(it=>{
+      (o.items||[]).forEach(it=>{
         if(it.itemStatus==="recusado"){
           list.push({...it, orderId:o.id, sectorLabel:o.sectorLabel, createdAt:o.createdAt, priority:o.priority});
         }
@@ -856,8 +855,21 @@ function AppInner() {
   const logout    = useCallback(()=>setSession(null),[]);
 
   const pendingApproval = useMemo(()=>orders.filter(o=>o.status==="pendente").length,[orders]);
-  const pendingBuy = useMemo(()=>orders.filter(o=>o.status==="aprovado"&&(o.destino===session?.id||o.destino==="comprador")&&o.items.some(i=>!i.done&&i.itemStatus!=="recusado")).length,[orders,session]);
-  const pendingChefia   = useMemo(()=>orders.filter(o=>o.status==="aprovado"&&o.destino==="chefia"&&o.items.some(i=>!i.done&&i.itemStatus!=="recusado")).length,[orders]);
+  const pendingBuy = useMemo(()=>orders.filter(o=>o.status==="aprovado"&&(o.destino===session?.id||o.destino==="comprador")&&(o.items||[]).some(i=>!i.done&&i.itemStatus!=="recusado")).length,[orders,session]);
+  const pendingChefia   = useMemo(()=>orders.filter(o=>o.status==="aprovado"&&o.destino==="chefia"&&(o.items||[]).some(i=>!i.done&&i.itemStatus!=="recusado")).length,[orders]);
+
+  // ── APP BADGE API: mostra contagem no ícone do PWA ───────────────────────
+  useEffect(()=>{
+    if(!("setAppBadge" in navigator)) return;
+    if(!session){ navigator.clearAppBadge?.().catch?.(()=>{}); return; }
+    const u = users.find(v=>v.id===session.id)||session;
+    let count = 0;
+    if(isAdmin(u))       count = pendingApproval;
+    else if(isChefia(u)) count = pendingApproval + pendingChefia;
+    else if(isComprador(u)) count = pendingBuy;
+    if(count > 0) navigator.setAppBadge(count).catch(()=>{});
+    else navigator.clearAppBadge?.().catch?.(()=>{});
+  },[session, users, pendingApproval, pendingBuy, pendingChefia]);
 
   if (!session) return <LoginScreen users={users} onLogin={setSession} showToast={showToast} toast={toast}/>;
 
@@ -955,13 +967,13 @@ function AdminScreen({ user, users, setUsers, orders, setOrders, onLogout, showT
 
   const recusadosCount = useMemo(()=>{
     let count=0;
-    orders.forEach(o=>o.items.forEach(it=>{ if(it.itemStatus==="recusado") count++; }));
+    orders.forEach(o=>(o.items||[]).forEach(it=>{ if(it.itemStatus==="recusado") count++; }));
     return count;
   },[orders]);
 
   const pendentesCount = useMemo(()=>{
     let count=0;
-    orders.forEach(o=>{ if(o.status==="aprovado") o.items.forEach(it=>{ if(!it.done&&it.itemStatus!=="recusado") count++; }); });
+    orders.forEach(o=>{ if(o.status==="aprovado") (o.items||[]).forEach(it=>{ if(!it.done&&it.itemStatus!=="recusado") count++; }); });
     return count;
   },[orders]);
 
@@ -1085,13 +1097,13 @@ function ChefiaScreen({ user, users, orders, setOrders, onLogout, showToast, toa
 
   const recusadosCount = useMemo(()=>{
     let count=0;
-    orders.forEach(o=>o.items.forEach(it=>{ if(it.itemStatus==="recusado") count++; }));
+    orders.forEach(o=>(o.items||[]).forEach(it=>{ if(it.itemStatus==="recusado") count++; }));
     return count;
   },[orders]);
 
   const pendentesCount = useMemo(()=>{
     let count=0;
-    orders.forEach(o=>{ if(o.status==="aprovado") o.items.forEach(it=>{ if(!it.done&&it.itemStatus!=="recusado") count++; }); });
+    orders.forEach(o=>{ if(o.status==="aprovado") (o.items||[]).forEach(it=>{ if(!it.done&&it.itemStatus!=="recusado") count++; }); });
     return count;
   },[orders]);
 
