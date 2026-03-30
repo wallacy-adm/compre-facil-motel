@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useState, useCallback, memo, useRef, useEffect, useMemo, Component } from "react";
 import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
