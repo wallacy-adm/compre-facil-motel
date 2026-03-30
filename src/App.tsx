@@ -35,7 +35,28 @@ const LS = {
   remove:(k)=>{ try{ localStorage.removeItem(k); }catch{} },
 };
 
-const LOGO = "/logo.svg";
+// ── LOGO INLINE SVG (zero bytes de arquivo — fonte via Google Fonts) ──────
+const CarpeDiemLogo = memo(({ width = 190, height = undefined }: { width?: number; height?: number }) => {
+  const VW = 300, VH = 148;
+  const h = height ?? Math.round(width * VH / VW);
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${VW} ${VH}`} width={width} height={h} style={{display:"block"}}>
+      <rect width={VW} height={VH} fill="#000" rx="8" ry="8"/>
+      {/* CARPE — right-anchored to gap center */}
+      <text x="126" y="80" fontFamily="Cinzel,Georgia,serif" fontSize="52" fill="#fff" textAnchor="end">CARPE</text>
+      {/* DIEM — left-anchored from gap center */}
+      <text x="174" y="80" fontFamily="Cinzel,Georgia,serif" fontSize="52" fill="#fff" textAnchor="start">DIEM</text>
+      {/* Diamond accent above heart */}
+      <polygon points="150,34 154,42 150,48 146,42" fill="#20B2AA"/>
+      {/* Heart ornament — small, near top of cap-height, between the words */}
+      <path d="M150,62 C150,62 137,55 133,47 C129,39 135,32 143,34 C146.5,35 149,39 150,42 C151,39 153.5,35 157,34 C165,32 171,39 167,47 C163,55 150,62 150,62Z" fill="#20B2AA"/>
+      {/* Thin teal rule below text */}
+      <line x1="14" y1="91" x2="286" y2="91" stroke="#20B2AA" strokeWidth="1"/>
+      {/* MOTEL — small tracked type */}
+      <text x="150" y="118" fontFamily="Cinzel,Georgia,serif" fontSize="11" fill="#fff" letterSpacing="7" textAnchor="middle">MOTEL</text>
+    </svg>
+  );
+});
 
 // ── PUSH NOTIFICATIONS ────────────────────────────────────────────────────
 const VAPID_PUBLIC_KEY = "BLUGwL3JIYZxi08-Pc7ULoJv2zo2SUjWKpHbypCFzK6wEhxOveo86kl0yLoDfanhL8N-65C2_RE5PY3YzmN2Jlo";
@@ -228,7 +249,7 @@ const AddedItem = memo(({ item, idx, onEdit, onDelete, onLightbox }) => {
 
 const Topbar = memo(({ user, onLogout, children }) => (
   <div style={{background:"#050709",borderBottom:"1px solid #0ABFCA1A",padding:"12px 18px",display:"flex",alignItems:"center",gap:"12px",flexShrink:0,position:"sticky",top:0,zIndex:10}}>
-    <img src={LOGO} alt="logo" style={{height:"28px",borderRadius:"5px"}}/>
+    <CarpeDiemLogo height={28}/>
     <div style={{borderLeft:"1px solid #0ABFCA22",paddingLeft:"12px",flex:1}}>
       <div style={{color:"#E2E8F0",fontWeight:"600",fontSize:"14px"}}>{ROLES[getRoles(user)[0]]?.icon} {user.name}</div>
       <div style={{color:"#0ABFCA55",fontSize:"11px"}}>{getRoles(user).map(r=>ROLES[r]?.label).join(", ")}</div>
@@ -963,7 +984,7 @@ function LoginScreen({ users, onLogin, showToast, toast }) {
         </div>
         <div style={{position:"relative",display:"inline-block"}}>
           <div style={{position:"absolute",inset:"-24px",background:"radial-gradient(ellipse at center,#0ABFCA14 0%,transparent 70%)",borderRadius:"50%",pointerEvents:"none"}}/>
-          <img src={LOGO} alt="Carpe Diem" style={{width:"190px",borderRadius:"12px",position:"relative",zIndex:1}}/>
+          <CarpeDiemLogo width={190}/>
         </div>
         <div style={{marginTop:"24px"}}><div className="tl"/></div>
       </div>
