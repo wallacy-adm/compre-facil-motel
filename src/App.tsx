@@ -37,6 +37,15 @@ const LS = {
 
 const LOGO = "/logo.svg";
 
+// ── PUSH NOTIFICATIONS ────────────────────────────────────────────────────
+const VAPID_PUBLIC_KEY = "BLUGwL3JIYZxi08-Pc7ULoJv2zo2SUjWKpHbypCFzK6wEhxOveo86kl0yLoDfanhL8N-65C2_RE5PY3YzmN2Jlo";
+function urlBase64ToUint8Array(b64: string): Uint8Array {
+  const pad = '='.repeat((4 - b64.length % 4) % 4);
+  const base64 = (b64 + pad).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = window.atob(base64);
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
 // ── CONSTANTES ────────────────────────────────────────────────────────────
 const ROLES = {
   admin:      { label: "Administrador", icon: "👑", color: "#A78BFA" },
@@ -772,6 +781,34 @@ function AppInner() {
 
   // Session persists in localStorage only
   useEffect(()=>{ LS.set("cf_session",session);},[session]);
+
+  // ── PUSH: registra service worker e subscreve ao push quando logar ───────
+  useEffect(()=>{
+    if (!session?.id || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    async function setupPush() {
+      try {
+        const reg = await navigator.serviceWorker.register('/sw.js');
+        await navigator.serviceWorker.ready;
+        if (Notification.permission === 'denied') return;
+        const perm = Notification.permission === 'granted'
+          ? 'granted'
+          : await Notification.requestPermission();
+        if (perm !== 'granted') return;
+        let sub = await reg.pushManager.getSubscription();
+        if (!sub) {
+          sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+          });
+        }
+        await supabase.from('push_subscriptions').upsert(
+          { user_id: session.id, endpoint: sub.endpoint, subscription: sub.toJSON() },
+          { onConflict: 'endpoint' }
+        );
+      } catch(e) { console.warn('[Push]', e); }
+    }
+    setupPush();
+  }, [session?.id]);
 
   // ── BOOT: load users + orders from Supabase ──────────────────────────────
   useEffect(()=>{

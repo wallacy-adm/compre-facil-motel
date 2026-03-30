@@ -1,0 +1,19 @@
+{
+  "name": "CompraFácil",
+  "short_name": "CompraFácil",
+  "description": "Sistema de compras Carpe Diem Motel",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#050709",
+  "theme_color": "#050709",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
