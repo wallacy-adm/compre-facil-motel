@@ -1,11 +1,6 @@
 import { useState, useCallback, memo, useRef, useEffect, useMemo, Component } from "react";
 import * as XLSX from "xlsx";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-);
+import { supabase } from "@/integrations/supabase/client";
 
 // ── CAMADA 1: ERROR BOUNDARY GLOBAL ──────────────────────────────────────
 class ErrorBoundary extends Component {
