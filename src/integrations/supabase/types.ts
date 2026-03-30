@@ -14,7 +14,87 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      orders: {
+        Row: {
+          createdAt: string | null
+          createdDate: string | null
+          destino: string | null
+          id: number
+          inserted_at: string
+          items: Json
+          priority: string
+          sector: string | null
+          sectorLabel: string | null
+          status: string
+          userId: string | null
+          userName: string | null
+          userRole: string | null
+        }
+        Insert: {
+          createdAt?: string | null
+          createdDate?: string | null
+          destino?: string | null
+          id: number
+          inserted_at?: string
+          items?: Json
+          priority?: string
+          sector?: string | null
+          sectorLabel?: string | null
+          status?: string
+          userId?: string | null
+          userName?: string | null
+          userRole?: string | null
+        }
+        Update: {
+          createdAt?: string | null
+          createdDate?: string | null
+          destino?: string | null
+          id?: number
+          inserted_at?: string
+          items?: Json
+          priority?: string
+          sector?: string | null
+          sectorLabel?: string | null
+          status?: string
+          userId?: string | null
+          userName?: string | null
+          userRole?: string | null
+        }
+        Relationships: []
+      }
+      users: {
+        Row: {
+          active: boolean
+          deleted: boolean
+          id: string
+          name: string
+          password: string
+          role: string
+          roles: Json
+          username: string
+        }
+        Insert: {
+          active?: boolean
+          deleted?: boolean
+          id: string
+          name: string
+          password: string
+          role?: string
+          roles?: Json
+          username: string
+        }
+        Update: {
+          active?: boolean
+          deleted?: boolean
+          id?: string
+          name?: string
+          password?: string
+          role?: string
+          roles?: Json
+          username?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
