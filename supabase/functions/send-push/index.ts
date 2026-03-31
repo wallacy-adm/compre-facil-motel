@@ -3,7 +3,7 @@ import webpush from "npm:web-push@3.6.7";
 const VAPID_PUBLIC_KEY  = Deno.env.get("VAPID_PUBLIC_KEY")  || "BLUGwL3JIYZxi08-Pc7ULoJv2zo2SUjWKpHbypCFzK6wEhxOveo86kl0yLoDfanhL8N-65C2_RE5PY3YzmN2Jlo";
 const VAPID_PRIVATE_KEY = Deno.env.get("VAPID_PRIVATE_KEY") || "1ERdsBRyjju0Y1Ept2Fb8BewMJ0e2HVJMEfZTdkecjg";
 const VAPID_EMAIL       = Deno.env.get("VAPID_EMAIL")       || "mailto:admin@carpediemmotel.com";
-const WEBHOOK_SECRET    = "comprafacil-push-2025";
+const WEBHOOK_SECRET    = Deno.env.get("WEBHOOK_SECRET") ?? "comprafacil-push-2025";
 const SUPABASE_URL      = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY       = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
@@ -23,6 +23,17 @@ async function dbGet(path: string) {
     },
   });
   return res.json();
+}
+
+async function dbDelete(path: string) {
+  await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    method: "DELETE",
+    headers: {
+      "apikey": SERVICE_KEY,
+      "Authorization": `Bearer ${SERVICE_KEY}`,
+      "Content-Type": "application/json",
+    },
+  });
 }
 
 Deno.serve(async (req) => {
@@ -82,7 +93,7 @@ Deno.serve(async (req) => {
 
     // Busca subscriptions desses usuários
     const idsParam = targetIds.map(id => `"${id}"`).join(",");
-    const subs = await dbGet(`push_subscriptions?user_id=in.(${idsParam})&select=subscription`);
+    const subs = await dbGet(`push_subscriptions?user_id=in.(${idsParam})&select=id,endpoint,subscription`);
 
     if (!Array.isArray(subs) || subs.length === 0) {
       return new Response(JSON.stringify({ sent: 0 }), { headers: { ...cors, "Content-Type": "application/json" } });
@@ -91,11 +102,35 @@ Deno.serve(async (req) => {
     // Envia push para cada dispositivo
     const results = await Promise.allSettled(
       subs.map((row: Record<string, unknown>) =>
-        webpush.sendNotification(row.subscription as webpush.PushSubscription, JSON.stringify(notification))
+        webpush.sendNotification(
+          row.subscription as webpush.PushSubscription,
+          JSON.stringify({
+            ...notification,
+            url: "/",
+            timestamp: Date.now(),
+          }),
+          { TTL: 60, urgency: "high" },
+        )
       )
     );
 
     const sent = results.filter(r => r.status === "fulfilled").length;
+    const staleRows = results
+      .map((result, idx) => ({ result, row: subs[idx] as Record<string, unknown> }))
+      .filter(({ result }) => {
+        if (result.status !== "rejected") return false;
+        const statusCode = (result.reason as { statusCode?: number })?.statusCode;
+        return statusCode === 404 || statusCode === 410;
+      })
+      .map(({ row }) => row.id as string)
+      .filter(Boolean);
+
+    if (staleRows.length > 0) {
+      await Promise.allSettled(
+        staleRows.map((id) => dbDelete(`push_subscriptions?id=eq.${id}`)),
+      );
+    }
+
     console.log(`[send-push] Enviado: ${sent}/${subs.length}`);
 
     return new Response(JSON.stringify({ sent }), {

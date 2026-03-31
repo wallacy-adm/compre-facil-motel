@@ -799,6 +799,7 @@ function AppInner() {
   const [orders,   setOrders]   = useState([]);
   const [lightbox, setLightbox] = useState(null);
   const [toast,    setToast]    = useState(null);
+  const originalTitleRef = useRef(typeof document !== "undefined" ? document.title : "CompraFácil");
 
   // Session persists in localStorage only
   useEffect(()=>{ LS.set("cf_session",session);},[session]);
@@ -918,15 +919,25 @@ function AppInner() {
 
   // ── APP BADGE API: mostra contagem no ícone do PWA ───────────────────────
   useEffect(()=>{
-    if(!("setAppBadge" in navigator)) return;
-    if(!session){ navigator.clearAppBadge?.().catch?.(()=>{}); return; }
+    if(!session){
+      if ("setAppBadge" in navigator) navigator.clearAppBadge?.().catch?.(()=>{});
+      if (typeof document !== "undefined") document.title = originalTitleRef.current;
+      return;
+    }
     const u = users.find(v=>v.id===session.id)||session;
     let count = 0;
     if(isAdmin(u))       count = pendingApproval;
     else if(isChefia(u)) count = pendingApproval + pendingChefia;
     else if(isComprador(u)) count = pendingBuy;
-    if(count > 0) navigator.setAppBadge(count).catch(()=>{});
-    else navigator.clearAppBadge?.().catch?.(()=>{});
+    if ("setAppBadge" in navigator) {
+      if(count > 0) navigator.setAppBadge(count).catch(()=>{});
+      else navigator.clearAppBadge?.().catch?.(()=>{});
+    }
+    if (typeof document !== "undefined") {
+      document.title = count > 0
+        ? `(${count}) ${originalTitleRef.current}`
+        : originalTitleRef.current;
+    }
   },[session, users, pendingApproval, pendingBuy, pendingChefia]);
 
   if (!session) return <LoginScreen users={users} onLogin={setSession} showToast={showToast} toast={toast}/>;
