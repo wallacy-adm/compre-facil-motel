@@ -6,6 +6,12 @@ self.addEventListener('push', event => {
   let data;
   try { data = event.data.json(); } catch { data = { title: 'CompraFácil', body: event.data.text() }; }
 
+  const url = data.url || '/';
+
+  if ('setAppBadge' in self.navigator) {
+    self.navigator.setAppBadge(1).catch(() => {});
+  }
+
   event.waitUntil(
     self.registration.showNotification(data.title || 'CompraFácil', {
       body: data.body || '',
@@ -13,27 +19,25 @@ self.addEventListener('push', event => {
       badge: '/favicon.svg',
       tag: data.tag || 'comprafacil',
       renotify: true,
-      vibrate: [200, 100, 200],
       requireInteraction: true,
-      timestamp: data.timestamp || Date.now(),
-      data: { url: data.url || '/' }
+      vibrate: [300, 100, 300, 100, 300],
+      data: { url }
     })
   );
 });
 
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  const targetUrl = event.notification?.data?.url || '/';
+  const url = event.notification.data?.url || '/';
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
       for (const c of list) {
         if (c.url.startsWith(self.location.origin) && 'focus' in c) {
-          c.focus();
-          c.navigate(targetUrl);
-          return;
+          c.postMessage({ type: 'NAVIGATE', url });
+          return c.focus();
         }
       }
-      return clients.openWindow(targetUrl);
+      return clients.openWindow(url);
     })
   );
 });

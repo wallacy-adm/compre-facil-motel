@@ -917,7 +917,7 @@ function AppInner() {
   const pendingBuy = useMemo(()=>orders.filter(o=>o.status==="aprovado"&&(o.destino===session?.id||o.destino==="comprador")&&(o.items||[]).some(i=>!i.done&&i.itemStatus!=="recusado")).length,[orders,session]);
   const pendingChefia   = useMemo(()=>orders.filter(o=>o.status==="aprovado"&&o.destino==="chefia"&&(o.items||[]).some(i=>!i.done&&i.itemStatus!=="recusado")).length,[orders]);
 
-  // ── APP BADGE API: mostra contagem no ícone do PWA ───────────────────────
+  // ── APP BADGE API + fallback de título na aba ────────────────────────────
   useEffect(()=>{
     if(!session){
       if ("setAppBadge" in navigator) navigator.clearAppBadge?.().catch?.(()=>{});
@@ -926,8 +926,8 @@ function AppInner() {
     }
     const u = users.find(v=>v.id===session.id)||session;
     let count = 0;
-    if(isAdmin(u))       count = pendingApproval;
-    else if(isChefia(u)) count = pendingApproval + pendingChefia;
+    if(isAdmin(u))          count = pendingApproval;
+    else if(isChefia(u))    count = pendingApproval + pendingChefia;
     else if(isComprador(u)) count = pendingBuy;
     if ("setAppBadge" in navigator) {
       if(count > 0) navigator.setAppBadge(count).catch(()=>{});
@@ -1159,9 +1159,6 @@ function AdminScreen({ user, users, setUsers, orders, setOrders, onLogout, showT
 function ChefiaScreen({ user, users, orders, setOrders, onLogout, showToast, toast, lightbox, setLightbox, pendingApproval, pendingChefia }) {
   const [tab, setTab] = useState("aprovacao");
 
-  useEffect(()=>{
-    if(pendingApproval===0 && tab==="aprovacao") setTab("compras");
-  },[pendingApproval]);
   const [openOrder, setOpenOrder] = useState(null);
   const togglingRef               = useRef(new Set());
 

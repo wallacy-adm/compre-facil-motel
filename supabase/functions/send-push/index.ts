@@ -14,26 +14,19 @@ const cors = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-webhook-secret",
 };
 
+const dbHeaders = {
+  "apikey": SERVICE_KEY,
+  "Authorization": `Bearer ${SERVICE_KEY}`,
+  "Content-Type": "application/json",
+};
+
 async function dbGet(path: string) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    headers: {
-      "apikey": SERVICE_KEY,
-      "Authorization": `Bearer ${SERVICE_KEY}`,
-      "Content-Type": "application/json",
-    },
-  });
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { headers: dbHeaders });
   return res.json();
 }
 
 async function dbDelete(path: string) {
-  await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    method: "DELETE",
-    headers: {
-      "apikey": SERVICE_KEY,
-      "Authorization": `Bearer ${SERVICE_KEY}`,
-      "Content-Type": "application/json",
-    },
-  });
+  await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { method: "DELETE", headers: dbHeaders });
 }
 
 Deno.serve(async (req) => {
@@ -45,40 +38,48 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
-    // Supabase DB webhook format: { type, table, schema, record, old_record }
     const type   = body.type   as string;
     const order  = body.record as Record<string, unknown>;
     const oldRec = body.old_record as Record<string, unknown> | null;
 
-    if (!order) return new Response(JSON.stringify({ skipped: true }), { headers: { ...cors, "Content-Type": "application/json" } });
+    if (!order) return new Response(JSON.stringify({ skipped: "no record" }), { headers: { ...cors, "Content-Type": "application/json" } });
 
-    // Decide quem notificar
     let notifyRoles: string[] = [];
-    let notification: { title: string; body: string; tag: string } | null = null;
+    let notification: { title: string; body: string; tag: string; url: string } | null = null;
 
     if (type === "INSERT" && order.status === "pendente") {
-      notifyRoles = ["admin", "chefia"];
       const setor = (order.sectorLabel || order.sector_label || "setor") as string;
-      notification = {
-        title: "📋 Novo Pedido",
-        body: `Pedido de ${setor} aguardando aprovação`,
-        tag: `order-new-${order.id}`,
-      };
+      if (order.destino === "comprador") {
+        notifyRoles = ["comprador"];
+        notification = {
+          title: "🛒 Pedido para Compra",
+          body: `Pedido de ${setor} direto para compra`,
+          tag: `order-buy-${order.id}`,
+          url: "/",
+        };
+      } else {
+        notifyRoles = ["admin", "chefia"];
+        notification = {
+          title: "📋 Novo Pedido",
+          body: `Pedido de ${setor} aguardando aprovação`,
+          tag: `order-new-${order.id}`,
+          url: "/",
+        };
+      }
     } else if (type === "UPDATE" && order.status === "aprovado" && oldRec?.status !== "aprovado") {
       if (order.destino === "comprador") {
         notifyRoles = ["comprador"];
-        notification = { title: "✅ Pedido Aprovado", body: "Itens aprovados aguardando compra", tag: `order-buy-${order.id}` };
+        notification = { title: "✅ Pedido Aprovado", body: "Itens aprovados aguardando compra", tag: `order-buy-${order.id}`, url: "/" };
       } else if (order.destino === "chefia") {
         notifyRoles = ["chefia"];
-        notification = { title: "✅ Pedido para Chefia", body: "Pedido aprovado aguardando compra", tag: `order-chefia-${order.id}` };
+        notification = { title: "✅ Pedido para Chefia", body: "Pedido aprovado aguardando compra", tag: `order-chefia-${order.id}`, url: "/" };
       }
     }
 
     if (!notification || notifyRoles.length === 0) {
-      return new Response(JSON.stringify({ skipped: true }), { headers: { ...cors, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ skipped: "no matching condition" }), { headers: { ...cors, "Content-Type": "application/json" } });
     }
 
-    // Busca usuários com os roles necessários
     const users = await dbGet("users?select=id,role,roles&deleted=eq.false");
     const targetIds: string[] = (Array.isArray(users) ? users : [])
       .filter((u: Record<string, unknown>) => {
@@ -88,10 +89,9 @@ Deno.serve(async (req) => {
       .map((u: Record<string, unknown>) => u.id as string);
 
     if (targetIds.length === 0) {
-      return new Response(JSON.stringify({ skipped: true }), { headers: { ...cors, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ skipped: "no target users" }), { headers: { ...cors, "Content-Type": "application/json" } });
     }
 
-    // Busca subscriptions desses usuários
     const idsParam = targetIds.map(id => `"${id}"`).join(",");
     const subs = await dbGet(`push_subscriptions?user_id=in.(${idsParam})&select=id,endpoint,subscription`);
 
@@ -99,41 +99,30 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ sent: 0 }), { headers: { ...cors, "Content-Type": "application/json" } });
     }
 
-    // Envia push para cada dispositivo
+    const payload = JSON.stringify(notification);
+    const pushOptions = { TTL: 60, urgency: "high" as const };
+
     const results = await Promise.allSettled(
-      subs.map((row: Record<string, unknown>) =>
-        webpush.sendNotification(
-          row.subscription as webpush.PushSubscription,
-          JSON.stringify({
-            ...notification,
-            url: "/",
-            timestamp: Date.now(),
-          }),
-          { TTL: 60, urgency: "high" },
-        )
-      )
+      subs.map(async (row: Record<string, unknown>) => {
+        try {
+          await webpush.sendNotification(row.subscription as webpush.PushSubscription, payload, pushOptions);
+        } catch (err: unknown) {
+          const status = (err as { statusCode?: number })?.statusCode;
+          if (status === 404 || status === 410) {
+            const id = row.id as string;
+            console.log(`[send-push] Removendo subscription morta (${status}): ${id}`);
+            await dbDelete(`push_subscriptions?id=eq.${id}`);
+          }
+          throw err;
+        }
+      })
     );
 
-    const sent = results.filter(r => r.status === "fulfilled").length;
-    const staleRows = results
-      .map((result, idx) => ({ result, row: subs[idx] as Record<string, unknown> }))
-      .filter(({ result }) => {
-        if (result.status !== "rejected") return false;
-        const statusCode = (result.reason as { statusCode?: number })?.statusCode;
-        return statusCode === 404 || statusCode === 410;
-      })
-      .map(({ row }) => row.id as string)
-      .filter(Boolean);
+    const sent   = results.filter(r => r.status === "fulfilled").length;
+    const failed = results.filter(r => r.status === "rejected").length;
+    console.log(`[send-push] Enviado: ${sent}/${subs.length}, falhou: ${failed}`);
 
-    if (staleRows.length > 0) {
-      await Promise.allSettled(
-        staleRows.map((id) => dbDelete(`push_subscriptions?id=eq.${id}`)),
-      );
-    }
-
-    console.log(`[send-push] Enviado: ${sent}/${subs.length}`);
-
-    return new Response(JSON.stringify({ sent }), {
+    return new Response(JSON.stringify({ sent, failed }), {
       headers: { ...cors, "Content-Type": "application/json" },
     });
 
