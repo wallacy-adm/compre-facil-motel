@@ -14,19 +14,26 @@ self.addEventListener('push', event => {
       tag: data.tag || 'comprafacil',
       renotify: true,
       vibrate: [200, 100, 200],
-      data: { url: '/' }
+      requireInteraction: true,
+      timestamp: data.timestamp || Date.now(),
+      data: { url: data.url || '/' }
     })
   );
 });
 
 self.addEventListener('notificationclick', event => {
   event.notification.close();
+  const targetUrl = event.notification?.data?.url || '/';
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
       for (const c of list) {
-        if (c.url.startsWith(self.location.origin) && 'focus' in c) return c.focus();
+        if (c.url.startsWith(self.location.origin) && 'focus' in c) {
+          c.focus();
+          c.navigate(targetUrl);
+          return;
+        }
       }
-      return clients.openWindow('/');
+      return clients.openWindow(targetUrl);
     })
   );
 });
