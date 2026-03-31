@@ -989,38 +989,39 @@ function LoginScreen({ users, onLogin, showToast, toast }) {
     <div style={{fontFamily:"'DM Sans',sans-serif",minHeight:"100vh",background:"#050709",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"24px 16px"}}>
       <style>{CSS}</style>
       <ToastEl toast={toast}/>
-      <div style={{textAlign:"center",marginBottom:"36px",maxWidth:"360px",width:"100%",animation:"fadeUp .7s ease both"}}>
+      <div style={{textAlign:"center",marginBottom:"56px",maxWidth:"420px",width:"100%",animation:"fadeUp .7s ease both"}}>
         <div style={{display:"flex",alignItems:"center",gap:"14px",marginBottom:"28px"}}>
-          <div className="tl" style={{flex:1}}/><span style={{color:"#0ABFCA",fontSize:"10px",letterSpacing:"3px",whiteSpace:"nowrap",fontWeight:"600",opacity:.7}}>SISTEMA DE COMPRAS</span><div className="tl" style={{flex:1}}/>
+          <div className="tl" style={{flex:1}}/><span style={{color:"#13bfd1",fontSize:"10px",letterSpacing:"0.3em",whiteSpace:"nowrap",fontWeight:"600",opacity:.86}}>SISTEMA DE COMPRAS</span><div className="tl" style={{flex:1}}/>
         </div>
-        <div style={{position:"relative",display:"inline-block"}}>
-          <div style={{position:"absolute",inset:"-24px",background:"radial-gradient(ellipse at center,#0ABFCA14 0%,transparent 70%)",borderRadius:"50%",pointerEvents:"none"}}/>
-          <CarpeDiemLogo width={190}/>
+        <div style={{display:"flex",justifyContent:"center"}}>
+          <div style={{width:"280px",height:"160px",background:"#0a1628",borderRadius:"16px",padding:"24px",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 18px 36px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.03)"}}>
+            <CarpeDiemLogo width={214}/>
+          </div>
         </div>
-        <div style={{marginTop:"24px"}}><div className="tl"/></div>
+        <div style={{marginTop:"32px"}}><div className="tl"/></div>
       </div>
       <div style={{width:"100%",maxWidth:"360px",animation:"fadeUp .7s .18s ease both",opacity:0,animationFillMode:"both"}}>
-        <div className="card" style={{padding:"24px"}}>
-          <div style={{fontSize:"16px",fontWeight:"700",color:"#E2E8F0",marginBottom:"4px"}}>Entrar</div>
+        <div className="card" style={{padding:"32px 40px",background:"linear-gradient(180deg,rgba(10,18,33,.92),rgba(7,14,26,.94))",border:"1px solid rgba(255,255,255,0.08)",boxShadow:"0 0 0 1px rgba(10,191,202,.08), 0 20px 42px rgba(10,191,202,.12)"}}>
+          <div style={{fontSize:"32px",fontWeight:"800",lineHeight:1.1,color:"#E2E8F0",marginBottom:"8px"}}>Entrar</div>
           <div style={{fontSize:"12px",color:"#4B5563",marginBottom:"20px"}}>Acesso restrito a colaboradores</div>
           <div style={{marginBottom:"12px"}}>
-            <div style={{fontSize:"11px",fontWeight:"600",color:"#4B5563",marginBottom:"6px",textTransform:"uppercase",letterSpacing:"1px"}}>Usuário</div>
-            <input value={username} onChange={e=>{setUsername(e.target.value);setErr("");}} onKeyDown={e=>e.key==="Enter"&&handleLogin()} placeholder="seu.usuario" className={`inp${err?" inp-err":""}`} autoCapitalize="none"/>
+            <div style={{fontSize:"10px",fontWeight:"600",color:"#728198",marginBottom:"8px",textTransform:"uppercase",letterSpacing:"0.22em"}}>Usuário</div>
+            <input value={username} onChange={e=>{setUsername(e.target.value);setErr("");}} onKeyDown={e=>e.key==="Enter"&&handleLogin()} placeholder="seu.usuario" className={`inp${err?" inp-err":""}`} autoCapitalize="none" style={{background:"rgba(0,0,0,0.3)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"10px",padding:"12px 14px"}}/>
           </div>
           <div style={{marginBottom:"8px"}}>
-            <div style={{fontSize:"11px",fontWeight:"600",color:"#4B5563",marginBottom:"6px",textTransform:"uppercase",letterSpacing:"1px"}}>Senha</div>
+            <div style={{fontSize:"10px",fontWeight:"600",color:"#728198",marginBottom:"8px",textTransform:"uppercase",letterSpacing:"0.22em"}}>Senha</div>
             <div style={{position:"relative"}}>
-              <input value={password} onChange={e=>{setPassword(e.target.value);setErr("");}} onKeyDown={e=>e.key==="Enter"&&handleLogin()} type={showPass?"text":"password"} placeholder="••••••••" className={`inp${err?" inp-err":""}`}/>
+              <input value={password} onChange={e=>{setPassword(e.target.value);setErr("");}} onKeyDown={e=>e.key==="Enter"&&handleLogin()} type={showPass?"text":"password"} placeholder="••••••••" className={`inp${err?" inp-err":""}`} style={{background:"rgba(0,0,0,0.3)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"10px",padding:"12px 14px"}}/>
               <div onClick={()=>setShowPass(p=>!p)} style={{position:"absolute",right:"12px",top:"50%",transform:"translateY(-50%)",color:"#4B5563",cursor:"pointer",fontSize:"16px"}}>{showPass?"🙈":"👁️"}</div>
             </div>
           </div>
           {err&&<div style={{fontSize:"12px",color:"#FF4C4C",marginBottom:"12px",padding:"8px 12px",background:"#FF4C4C14",border:"1px solid #FF4C4C33",borderRadius:"8px"}}>{err}</div>}
           <div onClick={handleLogin} className="btn"
-            style={{background:loading?"#1E2A30":"linear-gradient(135deg,#0891B2,#0ABFCA)",borderRadius:"12px",padding:"14px",textAlign:"center",color:loading?"#4B5563":"#fff",fontWeight:"700",fontSize:"15px",marginTop:"8px",boxShadow:loading?"none":"0 4px 20px #0ABFCA33"}}>
+            style={{background:loading?"#1E2A30":"linear-gradient(90deg,#129ab8 0%,#1cc8d5 100%)",borderRadius:"10px",padding:"14px",textAlign:"center",color:loading?"#4B5563":"#fff",fontWeight:"800",fontSize:"16px",lineHeight:1,marginTop:"10px",boxShadow:loading?"none":"0 10px 28px rgba(10,191,202,.34)"}}>
             {loading?"Entrando...":"Entrar"}
           </div>
         </div>
-        <div style={{marginTop:"24px",textAlign:"center",color:"#1A2025",fontSize:"11px"}}>CompraFácil © {new Date().getFullYear()}</div>
+        <div style={{marginTop:"24px",textAlign:"center",color:"#97a4b5",fontSize:"12px",opacity:.3}}>CompraFácil © {new Date().getFullYear()}</div>
       </div>
     </div>
   );
