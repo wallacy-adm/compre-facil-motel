@@ -66,6 +66,50 @@ function urlBase64ToUint8Array(b64: string): Uint8Array {
   const raw = window.atob(base64);
   return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
 }
+async function subscribePush(reg: ServiceWorkerRegistration, userId: string) {
+  try {
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      });
+    }
+    await supabase.from('push_subscriptions').upsert(
+      { user_id: userId, endpoint: sub.endpoint, subscription: sub.toJSON() },
+      { onConflict: 'endpoint' }
+    );
+  } catch(e) { console.warn('[Push subscribe]', e); }
+}
+
+// ── BANNERS PWA ────────────────────────────────────────────────────────────
+function NotifBanner({ onEnable, onDismiss }: { onEnable: ()=>void; onDismiss: ()=>void }) {
+  return (
+    <div style={{position:"fixed",top:0,left:0,right:0,zIndex:9999,background:"#0ABFCA",color:"#050709",padding:"10px 16px",display:"flex",alignItems:"center",gap:"10px",fontSize:"13px",fontWeight:600}}>
+      <span style={{flex:1}}>🔔 Ative as notificações para receber alertas de pedidos</span>
+      <button onClick={onEnable} style={{background:"#050709",color:"#0ABFCA",border:"none",borderRadius:"8px",padding:"6px 14px",fontWeight:700,cursor:"pointer",fontSize:"13px"}}>Ativar</button>
+      <button onClick={onDismiss} style={{background:"transparent",color:"#050709",border:"none",fontSize:"18px",cursor:"pointer",lineHeight:1}}>✕</button>
+    </div>
+  );
+}
+function IOSInstallBanner({ onDismiss }: { onDismiss: ()=>void }) {
+  return (
+    <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:9999,background:"#1A1A2E",color:"#E2E8F0",padding:"16px",borderRadius:"16px 16px 0 0",boxShadow:"0 -4px 24px #0006",fontSize:"13px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:"8px"}}>
+        <strong>Instalar CompraFácil no iPhone</strong>
+        <button onClick={onDismiss} style={{background:"transparent",color:"#6B7280",border:"none",fontSize:"18px",cursor:"pointer"}}>✕</button>
+      </div>
+      <p style={{margin:"0 0 8px",color:"#9CA3AF"}}>Para receber notificações no iPhone, instale o app:</p>
+      <ol style={{margin:0,paddingLeft:"18px",color:"#E2E8F0",lineHeight:"1.8"}}>
+        <li>Abra este site no <strong>Safari</strong></li>
+        <li>Toque em <strong>Compartilhar</strong> <span style={{fontSize:"16px"}}>⎋</span></li>
+        <li>Role e toque em <strong>"Adicionar à Tela de Início"</strong></li>
+        <li>Abra o app instalado e ative as notificações</li>
+      </ol>
+      <p style={{margin:"8px 0 0",color:"#6B7280",fontSize:"11px"}}>Requer iOS 16.4 ou superior</p>
+    </div>
+  );
+}
 
 // ── CONSTANTES ────────────────────────────────────────────────────────────
 const ROLES = {
@@ -800,36 +844,37 @@ function AppInner() {
   const [lightbox, setLightbox] = useState(null);
   const [toast,    setToast]    = useState(null);
   const originalTitleRef = useRef(typeof document !== "undefined" ? document.title : "CompraFácil");
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as unknown as {MSStream?:unknown}).MSStream;
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as unknown as {standalone?:boolean}).standalone === true;
+  const [showIOSInstall, setShowIOSInstall] = useState(isIOS && !isStandalone);
 
   // Session persists in localStorage only
   useEffect(()=>{ LS.set("cf_session",session);},[session]);
 
-  // ── PUSH: registra service worker e subscreve ao push quando logar ───────
+  // ── PUSH: estado e refs ───────────────────────────────────────────────────
+  const [notifStatus, setNotifStatus] = useState<NotificationPermission>(
+    typeof Notification !== 'undefined' ? Notification.permission : 'default'
+  );
+  const swRegRef = useRef<ServiceWorkerRegistration|null>(null);
+
+  // Registra SW e assina automaticamente se permissão já foi concedida
   useEffect(()=>{
     if (!session?.id || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
-    async function setupPush() {
-      try {
-        const reg = await navigator.serviceWorker.register('/sw.js');
-        await navigator.serviceWorker.ready;
-        if (Notification.permission === 'denied') return;
-        const perm = Notification.permission === 'granted'
-          ? 'granted'
-          : await Notification.requestPermission();
-        if (perm !== 'granted') return;
-        let sub = await reg.pushManager.getSubscription();
-        if (!sub) {
-          sub = await reg.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-          });
-        }
-        await supabase.from('push_subscriptions').upsert(
-          { user_id: session.id, endpoint: sub.endpoint, subscription: sub.toJSON() },
-          { onConflict: 'endpoint' }
-        );
-      } catch(e) { console.warn('[Push]', e); }
-    }
-    setupPush();
+    navigator.serviceWorker.register('/sw.js').then(async (reg)=>{
+      swRegRef.current = reg;
+      await navigator.serviceWorker.ready;
+      const perm = Notification.permission;
+      setNotifStatus(perm);
+      if (perm === 'granted') await subscribePush(reg, session.id);
+    }).catch(e=>console.warn('[SW]', e));
+  }, [session?.id]);
+
+  // Função chamada APENAS por gesto do usuário (botão) — obrigatório no iOS
+  const enableNotifications = useCallback(async ()=>{
+    if (!swRegRef.current || !session?.id) return;
+    const perm = await Notification.requestPermission();
+    setNotifStatus(perm);
+    if (perm === 'granted') await subscribePush(swRegRef.current, session.id);
   }, [session?.id]);
 
   // ── BOOT: load users + orders from Supabase ──────────────────────────────
@@ -944,11 +989,21 @@ function AppInner() {
 
   const user = users.find(u=>u.id===session.id)||session;
   const props = { user, users, setUsers:dbSetUsers, orders, setOrders:dbSetOrders, onLogout:logout, showToast, toast, lightbox, setLightbox };
+  const showNotifBanner = notifStatus === 'default' && 'PushManager' in window;
 
-  if (isAdmin(user))    return <AdminScreen    {...props} pendingApproval={pendingApproval}/>;
-  if (isChefia(user))   return <ChefiaScreen   {...props} users={users} pendingApproval={pendingApproval} pendingChefia={pendingChefia}/>;
-  if (isComprador(user))return <CompradorScreen {...props} pendingBuy={pendingBuy}/>;
-  return <SectorScreen {...props} users={users}/>;
+  let screen;
+  if (isAdmin(user))         screen = <AdminScreen    {...props} pendingApproval={pendingApproval}/>;
+  else if (isChefia(user))   screen = <ChefiaScreen   {...props} users={users} pendingApproval={pendingApproval} pendingChefia={pendingChefia}/>;
+  else if (isComprador(user))screen = <CompradorScreen {...props} pendingBuy={pendingBuy}/>;
+  else                       screen = <SectorScreen {...props} users={users}/>;
+
+  return (
+    <>
+      {showNotifBanner && <NotifBanner onEnable={enableNotifications} onDismiss={()=>setNotifStatus('denied')}/>}
+      {showIOSInstall  && <IOSInstallBanner onDismiss={()=>setShowIOSInstall(false)}/>}
+      {screen}
+    </>
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────
