@@ -986,42 +986,41 @@ function LoginScreen({ users, onLogin, showToast, toast }) {
   };
 
   return (
-    <div style={{fontFamily:"'DM Sans',sans-serif",minHeight:"100vh",background:"#03070d",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"24px 16px"}}>
+    <div style={{fontFamily:"'DM Sans',sans-serif",minHeight:"100vh",background:"#050709",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"24px 16px"}}>
       <style>{CSS}</style>
       <ToastEl toast={toast}/>
-      <div style={{textAlign:"center",marginBottom:"38px",maxWidth:"390px",width:"100%",animation:"fadeUp .7s ease both"}}>
-        <div style={{display:"flex",alignItems:"center",gap:"14px",marginBottom:"30px"}}>
-          <div className="tl" style={{flex:1,opacity:.8}}/><span style={{color:"#18c8d7",fontSize:"10px",letterSpacing:"0.42em",whiteSpace:"nowrap",fontWeight:"500",opacity:.9}}>SISTEMA DE COMPRAS</span><div className="tl" style={{flex:1,opacity:.8}}/>
+      <div style={{textAlign:"center",marginBottom:"36px",maxWidth:"360px",width:"100%",animation:"fadeUp .7s ease both"}}>
+        <div style={{display:"flex",alignItems:"center",gap:"14px",marginBottom:"28px"}}>
+          <div className="tl" style={{flex:1}}/><span style={{color:"#0ABFCA",fontSize:"10px",letterSpacing:"3px",whiteSpace:"nowrap",fontWeight:"600",opacity:.7}}>SISTEMA DE COMPRAS</span><div className="tl" style={{flex:1}}/>
         </div>
-        <div style={{display:"flex",justifyContent:"center"}}>
-          <div style={{width:"190px",height:"190px",background:"#05080d",borderRadius:"14px",padding:"18px",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"inset 0 0 0 1px rgba(255,255,255,.02)"}}>
-            <CarpeDiemLogo width={154}/>
+        <div style={{position:"relative",display:"inline-block"}}>
+          <div style={{position:"absolute",inset:"-24px",background:"radial-gradient(ellipse at center,#0ABFCA14 0%,transparent 70%)",borderRadius:"50%",pointerEvents:"none"}}/>
+          <CarpeDiemLogo width={190}/>
           </div>
-        </div>
-        <div style={{marginTop:"36px"}}><div className="tl" style={{opacity:.85}}/></div>
+        <div style={{marginTop:"24px"}}><div className="tl"/></div>
       </div>
       <div style={{width:"100%",maxWidth:"360px",animation:"fadeUp .7s .18s ease both",opacity:0,animationFillMode:"both"}}>
-        <div className="card" style={{padding:"30px 24px 24px",background:"linear-gradient(180deg,rgba(6,14,27,.94),rgba(5,12,23,.96))",border:"1px solid rgba(53,95,124,.45)",boxShadow:"0 16px 34px rgba(0,0,0,.35)"}}>
-          <div style={{fontSize:"36px",fontWeight:"700",lineHeight:1.1,color:"#e7edf7",marginBottom:"8px"}}>Entrar</div>
-          <div style={{fontSize:"12px",color:"#4d5f75",marginBottom:"24px",fontWeight:"400"}}>Acesso restrito a colaboradores</div>
+        <div className="card" style={{padding:"24px"}}>
+          <div style={{fontSize:"16px",fontWeight:"700",color:"#E2E8F0",marginBottom:"4px"}}>Entrar</div>
+          <div style={{fontSize:"12px",color:"#4B5563",marginBottom:"20px"}}>Acesso restrito a colaboradores</div>
           <div style={{marginBottom:"14px"}}>
-            <div style={{fontSize:"11px",fontWeight:"500",color:"#64758d",marginBottom:"8px",textTransform:"uppercase",letterSpacing:"0.2em"}}>Usuário</div>
-            <input value={username} onChange={e=>{setUsername(e.target.value);setErr("");}} onKeyDown={e=>e.key==="Enter"&&handleLogin()} placeholder="seu.usuario" className={`inp${err?" inp-err":""}`} autoCapitalize="none" style={{background:"rgba(3,8,15,.8)",border:"1px solid rgba(63,98,126,.5)",borderRadius:"10px",padding:"11px 14px",height:"42px",fontSize:"14px"}}/>
+            <div style={{fontSize:"11px",fontWeight:"600",color:"#4B5563",marginBottom:"6px",textTransform:"uppercase",letterSpacing:"1px"}}>Usuário</div>
+            <input value={username} onChange={e=>{setUsername(e.target.value);setErr("");}} onKeyDown={e=>e.key==="Enter"&&handleLogin()} placeholder="seu.usuario" className={`inp${err?" inp-err":""}`} autoCapitalize="none"/>
           </div>
           <div style={{marginBottom:"8px"}}>
-            <div style={{fontSize:"11px",fontWeight:"500",color:"#64758d",marginBottom:"8px",textTransform:"uppercase",letterSpacing:"0.2em"}}>Senha</div>
+            <div style={{fontSize:"11px",fontWeight:"600",color:"#4B5563",marginBottom:"6px",textTransform:"uppercase",letterSpacing:"1px"}}>Senha</div>
             <div style={{position:"relative"}}>
-              <input value={password} onChange={e=>{setPassword(e.target.value);setErr("");}} onKeyDown={e=>e.key==="Enter"&&handleLogin()} type={showPass?"text":"password"} placeholder="••••••••" className={`inp${err?" inp-err":""}`} style={{background:"rgba(3,8,15,.8)",border:"1px solid rgba(63,98,126,.5)",borderRadius:"10px",padding:"11px 14px",height:"42px",fontSize:"14px"}}/>
-              <div onClick={()=>setShowPass(p=>!p)} style={{position:"absolute",right:"12px",top:"50%",transform:"translateY(-50%)",color:"#7e8ea3",cursor:"pointer",fontSize:"16px"}}>{showPass?"🙈":"👁️"}</div>
+              <input value={password} onChange={e=>{setPassword(e.target.value);setErr("");}} onKeyDown={e=>e.key==="Enter"&&handleLogin()} type={showPass?"text":"password"} placeholder="••••••••" className={`inp${err?" inp-err":""}`}/>
+              <div onClick={()=>setShowPass(p=>!p)} style={{position:"absolute",right:"12px",top:"50%",transform:"translateY(-50%)",color:"#4B5563",cursor:"pointer",fontSize:"16px"}}>{showPass?"🙈":"👁️"}</div>
             </div>
           </div>
           {err&&<div style={{fontSize:"12px",color:"#FF4C4C",marginBottom:"12px",padding:"8px 12px",background:"#FF4C4C14",border:"1px solid #FF4C4C33",borderRadius:"8px"}}>{err}</div>}
           <div onClick={handleLogin} className="btn"
-            style={{background:loading?"#1E2A30":"#14b8ca",borderRadius:"12px",padding:"14px",textAlign:"center",color:loading?"#4B5563":"#fff",fontWeight:"700",fontSize:"16px",lineHeight:1,marginTop:"10px",boxShadow:loading?"none":"0 10px 24px rgba(20,184,202,.32)"}}>
+            style={{background:loading?"#1E2A30":"linear-gradient(135deg,#0891B2,#0ABFCA)",borderRadius:"12px",padding:"14px",textAlign:"center",color:loading?"#4B5563":"#fff",fontWeight:"700",fontSize:"15px",marginTop:"8px",boxShadow:loading?"none":"0 4px 20px #0ABFCA33"}}>
             {loading?"Entrando...":"Entrar"}
           </div>
         </div>
-        <div style={{marginTop:"24px",textAlign:"center",color:"#6a7686",fontSize:"12px",opacity:.4}}>CompraFácil © {new Date().getFullYear()}</div>
+        <div style={{marginTop:"24px",textAlign:"center",color:"#1A2025",fontSize:"11px"}}>CompraFácil © {new Date().getFullYear()}</div>
       </div>
     </div>
   );
