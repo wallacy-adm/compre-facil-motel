@@ -43,17 +43,17 @@ const CarpeDiemLogo = memo(({ width = 190, height = undefined }: { width?: numbe
     <svg xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${VW} ${VH}`} width={width} height={h} style={{display:"block"}}>
       <rect width={VW} height={VH} fill="#000" rx="8" ry="8"/>
       {/* CARPE — right-anchored to gap center */}
-      <text x="126" y="80" fontFamily="Cinzel,Georgia,serif" fontSize="52" fill="#fff" textAnchor="end">CARPE</text>
+      <text x="140" y="82" fontFamily="Cinzel,Georgia,serif" fontSize="56" fill="#fff" textAnchor="end">CARPE</text>
       {/* DIEM — left-anchored from gap center */}
-      <text x="174" y="80" fontFamily="Cinzel,Georgia,serif" fontSize="52" fill="#fff" textAnchor="start">DIEM</text>
+      <text x="162" y="82" fontFamily="Cinzel,Georgia,serif" fontSize="56" fill="#fff" textAnchor="start">DIEM</text>
       {/* Diamond accent above heart */}
-      <polygon points="150,34 154,42 150,48 146,42" fill="#20B2AA"/>
+      <polygon points="151,34 155,42 151,48 147,42" fill="#20B2AA"/>
       {/* Heart ornament — small, near top of cap-height, between the words */}
-      <path d="M150,62 C150,62 137,55 133,47 C129,39 135,32 143,34 C146.5,35 149,39 150,42 C151,39 153.5,35 157,34 C165,32 171,39 167,47 C163,55 150,62 150,62Z" fill="#20B2AA"/>
+      <path d="M151,60 C151,60 141,54 138,47 C135,40 139,34 145,35 C147.8,36 149.8,39 151,42 C152.2,39 154.2,36 157,35 C163,34 167,40 164,47 C161,54 151,60 151,60Z" fill="#20B2AA"/>
       {/* Thin teal rule below text */}
-      <line x1="14" y1="91" x2="286" y2="91" stroke="#20B2AA" strokeWidth="1"/>
+      <line x1="14" y1="93" x2="286" y2="93" stroke="#20B2AA" strokeWidth="2"/>
       {/* MOTEL — small tracked type */}
-      <text x="150" y="118" fontFamily="Cinzel,Georgia,serif" fontSize="11" fill="#fff" letterSpacing="7" textAnchor="middle">MOTEL</text>
+      <text x="246" y="112" fontFamily="Cinzel,Georgia,serif" fontSize="19" fill="#fff" letterSpacing="3" textAnchor="middle">MOTEL</text>
     </svg>
   );
 });
@@ -989,20 +989,20 @@ function LoginScreen({ users, onLogin, showToast, toast }) {
     <div style={{fontFamily:"'DM Sans',sans-serif",minHeight:"100vh",background:"#03070d",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"24px 16px"}}>
       <style>{CSS}</style>
       <ToastEl toast={toast}/>
-      <div style={{textAlign:"center",marginBottom:"38px",maxWidth:"390px",width:"100%",animation:"fadeUp .7s ease both"}}>
-        <div style={{display:"flex",alignItems:"center",gap:"14px",marginBottom:"30px"}}>
-          <div className="tl" style={{flex:1,opacity:.8}}/><span style={{color:"#18c8d7",fontSize:"10px",letterSpacing:"0.42em",whiteSpace:"nowrap",fontWeight:"500",opacity:.9}}>SISTEMA DE COMPRAS</span><div className="tl" style={{flex:1,opacity:.8}}/>
+      <div style={{textAlign:"center",marginBottom:"44px",maxWidth:"390px",width:"100%",animation:"fadeUp .7s ease both"}}>
+        <div style={{display:"flex",alignItems:"center",gap:"14px",marginBottom:"34px"}}>
+          <div className="tl" style={{flex:1,opacity:.75}}/><span style={{color:"#18c8d7",fontSize:"10px",letterSpacing:"0.34em",whiteSpace:"nowrap",fontWeight:"500",opacity:.9}}>SISTEMA DE COMPRAS</span><div className="tl" style={{flex:1,opacity:.75}}/>
         </div>
         <div style={{display:"flex",justifyContent:"center"}}>
-          <div style={{width:"190px",height:"190px",background:"#05080d",borderRadius:"14px",padding:"18px",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"inset 0 0 0 1px rgba(255,255,255,.02)"}}>
-            <CarpeDiemLogo width={154}/>
+          <div style={{width:"190px",height:"190px",background:"#030608",borderRadius:"14px",padding:"14px",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <CarpeDiemLogo width={162}/>
           </div>
         </div>
-        <div style={{marginTop:"36px"}}><div className="tl" style={{opacity:.85}}/></div>
+        <div style={{marginTop:"42px"}}><div className="tl" style={{opacity:.85}}/></div>
       </div>
-      <div style={{width:"100%",maxWidth:"360px",animation:"fadeUp .7s .18s ease both",opacity:0,animationFillMode:"both"}}>
+      <div style={{width:"100%",maxWidth:"390px",animation:"fadeUp .7s .18s ease both",opacity:0,animationFillMode:"both"}}>
         <div className="card" style={{padding:"30px 24px 24px",background:"linear-gradient(180deg,rgba(6,14,27,.94),rgba(5,12,23,.96))",border:"1px solid rgba(53,95,124,.45)",boxShadow:"0 16px 34px rgba(0,0,0,.35)"}}>
-          <div style={{fontSize:"36px",fontWeight:"700",lineHeight:1.1,color:"#e7edf7",marginBottom:"8px"}}>Entrar</div>
+          <div style={{fontSize:"42px",fontWeight:"700",lineHeight:1.1,color:"#e7edf7",marginBottom:"10px"}}>Entrar</div>
           <div style={{fontSize:"12px",color:"#4d5f75",marginBottom:"24px",fontWeight:"400"}}>Acesso restrito a colaboradores</div>
           <div style={{marginBottom:"14px"}}>
             <div style={{fontSize:"11px",fontWeight:"500",color:"#64758d",marginBottom:"8px",textTransform:"uppercase",letterSpacing:"0.2em"}}>Usuário</div>
