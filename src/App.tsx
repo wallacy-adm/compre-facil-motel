@@ -58,6 +58,25 @@ const CarpeDiemLogo = memo(({ width = 190, height = undefined }: { width?: numbe
   );
 });
 
+// ── ALERTA SONORO IN-APP (funciona em qualquer browser sem permissão) ───────
+function playAlertSound() {
+  try {
+    const AC = window.AudioContext || (window as unknown as {webkitAudioContext: typeof AudioContext}).webkitAudioContext;
+    const ctx = new AC();
+    [[880,0],[1046,0.18],[1318,0.36]].forEach(([freq,delay])=>{
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = 'sine'; osc.frequency.value = freq;
+      const t = ctx.currentTime + delay;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.35, t + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+      osc.start(t); osc.stop(t + 0.45);
+    });
+  } catch(_) {}
+}
+
 // ── PUSH NOTIFICATIONS ────────────────────────────────────────────────────
 const VAPID_PUBLIC_KEY = "BLUGwL3JIYZxi08-Pc7ULoJv2zo2SUjWKpHbypCFzK6wEhxOveo86kl0yLoDfanhL8N-65C2_RE5PY3YzmN2Jlo";
 function urlBase64ToUint8Array(b64: string): Uint8Array {
@@ -901,15 +920,52 @@ function AppInner() {
     boot();
   },[]);
 
-  // ── REALTIME: keep orders in sync across tabs ─────────────────────────────
+  // Refs para uso no realtime sem re-subscribe
+  const sessionRef = useRef(session);
+  const usersRef   = useRef(users);
+  const showToastRef = useRef(showToast);
+  useEffect(()=>{ sessionRef.current = session; },[session]);
+  useEffect(()=>{ usersRef.current = users; },[users]);
+  useEffect(()=>{ showToastRef.current = showToast; },[showToast]);
+
+  // ── REALTIME: keep orders in sync + alertas sonoros ──────────────────────
   useEffect(()=>{
     const channel = supabase
       .channel("orders-realtime")
       .on("postgres_changes",{ event:"*", schema:"public", table:"orders" },(payload)=>{
         if (payload.eventType==="INSERT") {
           setOrders(p=>p.some(o=>o.id===payload.new.id) ? p : [...p, payload.new]);
+          // Alerta para novo pedido pendente
+          const s = sessionRef.current; const u = usersRef.current;
+          if (!s) return;
+          const me = u.find(v=>v.id===s.id)||s;
+          const o = payload.new;
+          const shouldAlert =
+            ((isAdmin(me)||isChefia(me)) && o.status==="pendente") ||
+            (isComprador(me) && o.status==="pendente" && o.destino==="comprador");
+          if (shouldAlert) {
+            playAlertSound();
+            navigator.vibrate?.([300,100,300,100,300]);
+            showToastRef.current(`📋 Novo pedido — ${o.sectorLabel||o.sector_label||"setor"}`, "success");
+          }
         } else if (payload.eventType==="UPDATE") {
           setOrders(p=>p.map(o=>o.id===payload.new.id ? payload.new : o));
+          // Alerta para pedido aprovado
+          const s = sessionRef.current; const u = usersRef.current;
+          if (!s) return;
+          const me = u.find(v=>v.id===s.id)||s;
+          const o = payload.new; const old = payload.old;
+          if (o.status==="aprovado" && old?.status !== "aprovado") {
+            if (isComprador(me) && o.destino==="comprador") {
+              playAlertSound();
+              navigator.vibrate?.([300,100,300,100,300]);
+              showToastRef.current("✅ Pedido aprovado — pronto para compra", "success");
+            } else if (isChefia(me) && o.destino==="chefia") {
+              playAlertSound();
+              navigator.vibrate?.([300,100,300]);
+              showToastRef.current("✅ Pedido aprovado aguarda sua compra", "success");
+            }
+          }
         } else if (payload.eventType==="DELETE") {
           setOrders(p=>p.filter(o=>o.id!==payload.old.id));
         }
