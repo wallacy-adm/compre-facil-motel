@@ -1052,7 +1052,7 @@ function AppInner() {
 
   const user = users.find(u=>u.id===session.id)||session;
   const props = { user, users, setUsers:dbSetUsers, orders, setOrders:dbSetOrders, onLogout:logout, showToast, toast, lightbox, setLightbox };
-  const showNotifBanner = notifStatus === 'default' && 'PushManager' in window;
+  const showNotifBanner = notifStatus === 'default' && 'PushManager' in window && isRunningStandalone();
 
   let screen;
   if (isAdmin(user))         screen = <AdminScreen    {...props} pendingApproval={pendingApproval}/>;

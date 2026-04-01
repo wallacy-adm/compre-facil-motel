@@ -19,8 +19,6 @@ self.addEventListener('push', event => {
       badge: '/icon-192x192.png',
       tag: data.tag || 'comprafacil',
       renotify: true,
-      requireInteraction: true,
-      vibrate: [300, 100, 300, 100, 300],
       data: { url }
     })
   );
