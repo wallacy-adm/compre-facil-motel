@@ -28,6 +28,13 @@ class ErrorBoundary extends Component {
   }
 }
 
+// ── DETECÇÃO PWA STANDALONE (necessário para push no iOS) ────────────────
+function isRunningStandalone(): boolean {
+  if ((navigator as any).standalone === true) return true;
+  if (window.matchMedia('(display-mode: standalone)').matches) return true;
+  return false;
+}
+
 // ── CAMADA 2: LOCALSTORAGE BLINDADO ──────────────────────────────────────
 const LS = {
   get:(k,d)=>{ try{ const v=localStorage.getItem(k); if(v===null) return d; const p=JSON.parse(v); return p??d; }catch{ return d; } },
