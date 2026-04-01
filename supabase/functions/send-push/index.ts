@@ -100,7 +100,7 @@ Deno.serve(async (req) => {
     }
 
     const payload = JSON.stringify(notification);
-    const pushOptions = { TTL: 60, urgency: "high" as const };
+    const pushOptions = { TTL: 86400, urgency: "high" as const };
 
     const results = await Promise.allSettled(
       subs.map(async (row: Record<string, unknown>) => {
