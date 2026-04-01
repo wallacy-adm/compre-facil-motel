@@ -920,13 +920,9 @@ function AppInner() {
     boot();
   },[]);
 
-  // Refs para uso no realtime sem re-subscribe
-  const sessionRef = useRef(session);
-  const usersRef   = useRef(users);
-  const showToastRef = useRef(showToast);
-  useEffect(()=>{ sessionRef.current = session; },[session]);
-  useEffect(()=>{ usersRef.current = users; },[users]);
-  useEffect(()=>{ showToastRef.current = showToast; },[showToast]);
+  const sessionRef   = useRef<typeof session>(null as unknown as typeof session);
+  const usersRef     = useRef<typeof users>([]);
+  const showToastRef = useRef<typeof showToast>(()=>{});
 
   // ── REALTIME: keep orders in sync + alertas sonoros ──────────────────────
   useEffect(()=>{
@@ -1013,6 +1009,10 @@ function AppInner() {
 
   const showToast = useCallback((msg,type="success")=>{ setToast({msg,type}); setTimeout(()=>setToast(null),2800); },[]);
   const logout    = useCallback(()=>setSession(null),[]);
+
+  useEffect(()=>{ sessionRef.current = session; },[session]);
+  useEffect(()=>{ usersRef.current = users; },[users]);
+  useEffect(()=>{ showToastRef.current = showToast; },[showToast]);
 
   const pendingApproval = useMemo(()=>orders.filter(o=>o.status==="pendente").length,[orders]);
   const pendingBuy = useMemo(()=>orders.filter(o=>o.status==="aprovado"&&(o.destino===session?.id||o.destino==="comprador")&&(o.items||[]).some(i=>!i.done&&i.itemStatus!=="recusado")).length,[orders,session]);
