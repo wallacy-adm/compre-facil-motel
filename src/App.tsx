@@ -28,6 +28,13 @@ class ErrorBoundary extends Component {
   }
 }
 
+// ── DETECÇÃO PWA STANDALONE (necessário para push no iOS) ────────────────
+function isRunningStandalone(): boolean {
+  if ((navigator as any).standalone === true) return true;
+  if (window.matchMedia('(display-mode: standalone)').matches) return true;
+  return false;
+}
+
 // ── CAMADA 2: LOCALSTORAGE BLINDADO ──────────────────────────────────────
 const LS = {
   get:(k,d)=>{ try{ const v=localStorage.getItem(k); if(v===null) return d; const p=JSON.parse(v); return p??d; }catch{ return d; } },
@@ -1045,7 +1052,7 @@ function AppInner() {
 
   const user = users.find(u=>u.id===session.id)||session;
   const props = { user, users, setUsers:dbSetUsers, orders, setOrders:dbSetOrders, onLogout:logout, showToast, toast, lightbox, setLightbox };
-  const showNotifBanner = notifStatus === 'default' && 'PushManager' in window;
+  const showNotifBanner = notifStatus === 'default' && 'PushManager' in window && isRunningStandalone();
 
   let screen;
   if (isAdmin(user))         screen = <AdminScreen    {...props} pendingApproval={pendingApproval}/>;
