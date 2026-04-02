@@ -56,10 +56,11 @@ async function sendNtfyNotification(
   });
   if (!res.ok) {
     const errText = await res.text().catch(() => "");
-    console.error(`[send-push][ntfy] Falha: HTTP ${res.status} topic=${topic} err=${errText}`);
-  } else {
-    console.log(`[send-push][ntfy] Enviado: topic=${topic}`);
+    const msg = `[send-push][ntfy] Falha: HTTP ${res.status} topic=${topic} err=${errText}`;
+    console.error(msg);
+    throw new Error(msg);
   }
+  console.log(`[send-push][ntfy] Enviado: topic=${topic}`);
 }
 
 Deno.serve(async (req) => {
@@ -175,6 +176,8 @@ Deno.serve(async (req) => {
     console.log(`[send-push] Canal 1 (WebPush): ${sent}/${(Array.isArray(subs) ? subs.length : 0)}, Canal 2 (ntfy): ${ntfySent}/${ntfyTargets.length} enviados`);
 
     return new Response(JSON.stringify({
+      sent: sent + ntfySent,   // compat: total enviados (ambos canais)
+      failed: failed + ntfyFailed, // compat: total falhas (ambos canais)
       canal1: { sent, failed },
       canal2: { sent: ntfySent, failed: ntfyFailed, targets: ntfyTargets.length },
     }), {
