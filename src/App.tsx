@@ -109,6 +109,8 @@ async function subscribePush(reg: ServiceWorkerRegistration, userId: string) {
 }
 
 // ── BANNERS PWA ────────────────────────────────────────────────────────────
+import { NtfySetupCard } from "@/components/NtfySetupCard";
+
 function NotifBanner({ onEnable, onDismiss }: { onEnable: ()=>void; onDismiss: ()=>void }) {
   return (
     <div style={{position:"fixed",top:0,left:0,right:0,zIndex:9999,background:"#0ABFCA",color:"#050709",padding:"10px 16px",display:"flex",alignItems:"center",gap:"10px",fontSize:"13px",fontWeight:600}}>
@@ -866,6 +868,7 @@ export default function App() {
 function AppInner() {
   const [session,  setSession]  = useState(()=>LS.get("cf_session",null));
   const [users,    setUsers]    = useState([]);
+  const [userNtfyTopic, setUserNtfyTopic] = useState<string | null>(null);
   const [orders,   setOrders]   = useState([]);
   const [lightbox, setLightbox] = useState(null);
   const [toast,    setToast]    = useState(null);
@@ -876,6 +879,14 @@ function AppInner() {
 
   // Session persists in localStorage only
   useEffect(()=>{ LS.set("cf_session",session);},[session]);
+
+  // Derivar ntfy_topic do estado 'users' quando session ou users mudar
+  useEffect(() => {
+    if (!session?.id || !users.length) return;
+    const currentUser = (users as Array<Record<string, unknown>>)
+      .find(u => u.id === session.id);
+    setUserNtfyTopic((currentUser?.ntfy_topic as string) ?? null);
+  }, [session?.id, users]);
 
   // ── PUSH: estado e refs ───────────────────────────────────────────────────
   const [notifStatus, setNotifStatus] = useState<NotificationPermission>(
@@ -1064,6 +1075,17 @@ function AppInner() {
     <>
       {showNotifBanner && <NotifBanner onEnable={enableNotifications} onDismiss={()=>setNotifStatus('denied')}/>}
       {showIOSInstall  && <IOSInstallBanner onDismiss={()=>setShowIOSInstall(false)}/>}
+      {session && isRunningStandalone() && (
+        <NtfySetupCard
+          userId={session.id}
+          currentNtfyTopic={userNtfyTopic}
+          onConfigured={() => {
+            supabase.from("users").select("*").eq("deleted", false)
+              .then(({ data }) => { if (data) setUsers(data); });
+          }}
+          onRevoked={() => setUserNtfyTopic(null)}
+        />
+      )}
       {screen}
     </>
   );

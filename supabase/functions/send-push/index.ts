@@ -6,6 +6,8 @@ const VAPID_EMAIL       = Deno.env.get("VAPID_EMAIL")       || "mailto:admin@car
 const WEBHOOK_SECRET    = Deno.env.get("WEBHOOK_SECRET") ?? "comprafacil-push-2025";
 const SUPABASE_URL      = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY       = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const NTFY_BASE_URL        = Deno.env.get("NTFY_BASE_URL")        ?? "";
+const NTFY_PUBLISHER_TOKEN = Deno.env.get("NTFY_PUBLISHER_TOKEN") ?? "";
 
 webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 
@@ -27,6 +29,38 @@ async function dbGet(path: string) {
 
 async function dbDelete(path: string) {
   await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { method: "DELETE", headers: dbHeaders });
+}
+
+// ── CANAL 2: ntfy.sh ──────────────────────────────────────────────────────────
+async function sendNtfyNotification(
+  topic: string,
+  title: string,
+  body: string,
+  clickUrl: string,
+): Promise<void> {
+  if (!NTFY_BASE_URL || !NTFY_PUBLISHER_TOKEN) {
+    console.log("[send-push][ntfy] Canal 2 desabilitado (env vars não configuradas)");
+    return;
+  }
+  const res = await fetch(`${NTFY_BASE_URL}/${topic}`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${NTFY_PUBLISHER_TOKEN}`,
+      "Title":         title,
+      "Priority":      "high",
+      "Tags":          "bell",
+      "Click":         clickUrl,
+      "Content-Type":  "text/plain",
+    },
+    body: body,
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    const msg = `[send-push][ntfy] Falha: HTTP ${res.status} topic=${topic} err=${errText}`;
+    console.error(msg);
+    throw new Error(msg);
+  }
+  console.log(`[send-push][ntfy] Enviado: topic=${topic}`);
 }
 
 Deno.serve(async (req) => {
@@ -80,7 +114,7 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ skipped: "no matching condition" }), { headers: { ...cors, "Content-Type": "application/json" } });
     }
 
-    const users = await dbGet("users?select=id,role,roles&deleted=eq.false");
+    const users = await dbGet("users?select=id,role,roles,ntfy_topic&deleted=eq.false");
     const targetIds: string[] = (Array.isArray(users) ? users : [])
       .filter((u: Record<string, unknown>) => {
         const roles = Array.isArray(u.roles) ? u.roles : (u.role ? [u.role] : []);
@@ -95,8 +129,8 @@ Deno.serve(async (req) => {
     const idsParam = targetIds.map(id => `"${id}"`).join(",");
     const subs = await dbGet(`push_subscriptions?user_id=in.(${idsParam})&select=id,endpoint,subscription`);
 
-    if (!Array.isArray(subs) || subs.length === 0) {
-      return new Response(JSON.stringify({ sent: 0 }), { headers: { ...cors, "Content-Type": "application/json" } });
+    if (!Array.isArray(subs)) {
+      return new Response(JSON.stringify({ error: "Failed to fetch subscriptions" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
     }
 
     const payload = JSON.stringify(notification);
@@ -120,9 +154,33 @@ Deno.serve(async (req) => {
 
     const sent   = results.filter(r => r.status === "fulfilled").length;
     const failed = results.filter(r => r.status === "rejected").length;
-    console.log(`[send-push] Enviado: ${sent}/${subs.length}, falhou: ${failed}`);
 
-    return new Response(JSON.stringify({ sent, failed }), {
+    // ── CANAL 2: Disparar ntfy para usuários com ntfy_topic configurado ────────────
+    const ntfyTargets = (Array.isArray(users) ? users : []).filter((u: Record<string, unknown>) => {
+      return targetIds.includes(u.id as string) && typeof u.ntfy_topic === "string" && u.ntfy_topic.length > 0;
+    });
+
+    const ntfyResults = await Promise.allSettled(
+      ntfyTargets.map((u: Record<string, unknown>) =>
+        sendNtfyNotification(
+          u.ntfy_topic as string,
+          notification.title,
+          notification.body,
+          notification.url,
+        )
+      )
+    );
+
+    const ntfySent   = ntfyResults.filter(r => r.status === "fulfilled").length;
+    const ntfyFailed = ntfyResults.filter(r => r.status === "rejected").length;
+    console.log(`[send-push] Canal 1 (WebPush): ${sent}/${(Array.isArray(subs) ? subs.length : 0)}, Canal 2 (ntfy): ${ntfySent}/${ntfyTargets.length} enviados`);
+
+    return new Response(JSON.stringify({
+      sent: sent + ntfySent,   // compat: total enviados (ambos canais)
+      failed: failed + ntfyFailed, // compat: total falhas (ambos canais)
+      canal1: { sent, failed },
+      canal2: { sent: ntfySent, failed: ntfyFailed, targets: ntfyTargets.length },
+    }), {
       headers: { ...cors, "Content-Type": "application/json" },
     });
 
