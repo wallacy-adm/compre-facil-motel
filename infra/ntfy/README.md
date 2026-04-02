@@ -17,11 +17,20 @@ cd infra/ntfy
 fly launch --name ntfy-comprafacil --no-deploy
 ```
 
+> **Nota sobre Docker image:** O arquivo `fly.toml` gerado usa `binwiederhier/ntfy:latest` por padrão. Em produção, recomenda-se pinnar uma versão estável (ex: `binwiederhier/ntfy:v2.9.0`) editando a propriedade `image` em `fly.toml` antes do deploy.
+
 ### 2. Criar volumes
 
 ```bash
 fly volumes create ntfy_data --size 1 --region gru
 fly volumes create ntfy_config --size 1 --region gru
+```
+
+Verifique que os volumes foram criados:
+
+```bash
+fly volumes list
+# Esperado: ambos ntfy_data e ntfy_config aparecem na lista
 ```
 
 ### 3. Deploy inicial
@@ -30,6 +39,8 @@ fly volumes create ntfy_config --size 1 --region gru
 fly deploy
 ```
 
+> **Importante:** O primeiro deploy inicia o ntfy com as configurações padrão. A configuração personalizada do `server.yml` (Passo 4) será aplicada apenas após esse deploy inicial. Isso é normal — o servidor funciona com defaults na primeira execução.
+
 ### 4. Subir o server.yml para o volume de config
 
 ```bash
@@ -37,6 +48,14 @@ fly ssh console
 # Dentro do container, criar/editar /etc/ntfy/server.yml
 # Cole o conteúdo do arquivo server.yml deste repositório
 exit
+```
+
+Após editar o `server.yml`, rode novamente para aplicar a configuração:
+
+```bash
+fly deploy
+# ou reinicie o container manualmente
+fly restart
 ```
 
 ### 5. Criar usuário admin
