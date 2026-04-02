@@ -9,6 +9,18 @@ const SUPABASE_URL          = Deno.env.get("SUPABASE_URL")          ?? "";
 const SERVICE_KEY           = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const SUPABASE_ANON_KEY     = Deno.env.get("SUPABASE_ANON_KEY")    ?? "";
 
+// Validate required environment variables at startup
+const missingVars = [
+  !NTFY_BASE_URL && "NTFY_BASE_URL",
+  !NTFY_ADMIN_BASIC_AUTH && "NTFY_ADMIN_BASIC_AUTH",
+  !SUPABASE_URL && "SUPABASE_URL",
+  !SERVICE_KEY && "SUPABASE_SERVICE_ROLE_KEY",
+].filter(Boolean);
+
+if (missingVars.length > 0) {
+  console.error("[generate-ntfy-token] Missing required env vars:", (missingVars as string[]).join(", "));
+}
+
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -45,8 +57,8 @@ async function getUser(userId: string): Promise<Record<string, unknown> | null> 
 }
 
 // Atualiza ntfy_token e ntfy_topic na tabela users (service role, bypassa RLS)
-async function saveNtfyToken(userId: string, token: string | null, topic: string | null): Promise<void> {
-  await fetch(`${SUPABASE_URL}/rest/v1/users?id=eq.${userId}`, {
+async function saveNtfyToken(userId: string, token: string | null, topic: string | null): Promise<boolean> {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/users?id=eq.${userId}`, {
     method: "PATCH",
     headers: {
       "apikey": SERVICE_KEY,
@@ -56,6 +68,11 @@ async function saveNtfyToken(userId: string, token: string | null, topic: string
     },
     body: JSON.stringify({ ntfy_token: token, ntfy_topic: topic }),
   });
+  if (!res.ok) {
+    console.error("[generate-ntfy-token] Falha ao salvar token no DB:", res.status, await res.text());
+    return false;
+  }
+  return true;
 }
 
 // Cria um token no servidor ntfy.sh autenticando como admin
@@ -137,8 +154,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    await saveNtfyToken(user.id, token, topic);
-    console.log("[generate-ntfy-token] Token gerado e salvo para user:", user.id.slice(0, 8));
+    const saved = await saveNtfyToken(user.id, token, topic);
+    if (saved) {
+      console.log("[generate-ntfy-token] Token gerado e salvo para user:", user.id.slice(0, 8));
+    } else {
+      console.warn("[generate-ntfy-token] Token criado no ntfy mas não persistido no DB para user:", user.id.slice(0, 8));
+    }
 
     return new Response(JSON.stringify({ token, topic, server_url: NTFY_BASE_URL }), {
       headers: { ...cors, "Content-Type": "application/json" },
@@ -150,7 +171,10 @@ Deno.serve(async (req) => {
     if (userRecord.ntfy_token) {
       await revokeNtfyToken(userRecord.ntfy_token as string);
     }
-    await saveNtfyToken(user.id, null, null);
+    const cleared = await saveNtfyToken(user.id, null, null);
+    if (!cleared) {
+      console.warn("[generate-ntfy-token] Falha ao limpar token do DB para user:", user.id.slice(0, 8));
+    }
     return new Response(JSON.stringify({ revoked: true }), {
       headers: { ...cors, "Content-Type": "application/json" },
     });
