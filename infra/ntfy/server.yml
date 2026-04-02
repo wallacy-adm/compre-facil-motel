@@ -1,0 +1,27 @@
+# ntfy.sh server configuration
+# Documentação: https://docs.ntfy.sh/config/
+
+# URL base do servidor — substitua pelo domínio real após o deploy
+base-url: "https://ntfy-comprafacil.fly.dev"
+
+# Listener
+listen-http: ":80"
+
+# Auth: todos os tópicos privados por padrão
+auth-file: "/etc/ntfy/user.db"
+auth-default-access: "deny-all"
+
+# Relay iOS: envia poke (apenas ID da mensagem, sem conteúdo) para APNs via ntfy.sh cloud
+upstream-base-url: "https://ntfy.sh"
+# upstream-access-token: "tk_XXXX"  # Descomentar após criar conta em ntfy.sh cloud
+
+# Cache de mensagens (fallback se dispositivo estava offline)
+cache-file: "/var/cache/ntfy/cache.db"
+cache-duration: "12h"
+
+# Operação atrás do proxy Fly.io
+behind-proxy: true
+
+# Logging
+log-level: "info"
+log-format: "json"
