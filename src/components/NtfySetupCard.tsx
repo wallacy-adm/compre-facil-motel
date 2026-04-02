@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
 type SetupState = "idle" | "loading" | "ready" | "configured" | "error";
@@ -21,6 +21,11 @@ export function NtfySetupCard({ userId, currentNtfyTopic, onConfigured, onRevoke
   const [config, setConfig] = useState<NtfyConfig | null>(null);
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [copied, setCopied] = useState(false);
+
+  // Sincronizar estado quando currentNtfyTopic mudar externamente
+  useEffect(() => {
+    setState(currentNtfyTopic ? "configured" : "idle");
+  }, [currentNtfyTopic]);
 
   async function handleSetup() {
     setState("loading");
@@ -88,13 +93,17 @@ export function NtfySetupCard({ userId, currentNtfyTopic, onConfigured, onRevoke
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Sessão não encontrada.");
 
-      await fetch(
+      const revokeRes = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-ntfy-token`,
         {
           method: "DELETE",
           headers: { "Authorization": `Bearer ${session.access_token}` },
         }
       );
+      if (!revokeRes.ok) {
+        const errData = await revokeRes.json().catch(() => ({}));
+        throw new Error(errData?.error ?? `Erro HTTP ${revokeRes.status}`);
+      }
       setConfig(null);
       setState("idle");
       onRevoked?.();
