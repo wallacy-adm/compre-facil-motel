@@ -138,6 +138,25 @@ function IOSInstallBanner({ onDismiss }: { onDismiss: ()=>void }) {
     </div>
   );
 }
+function AndroidInstallBanner({
+  onInstall,
+  onDismiss,
+}: { onInstall: ()=>void; onDismiss: ()=>void }) {
+  return (
+    <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:9999,background:"#0B1220",color:"#E2E8F0",padding:"14px 16px",borderRadius:"16px 16px 0 0",boxShadow:"0 -4px 24px #0006",fontSize:"13px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:"8px"}}>
+        <strong>Instalar app no Android</strong>
+        <button onClick={onDismiss} style={{background:"transparent",color:"#6B7280",border:"none",fontSize:"18px",cursor:"pointer"}}>✕</button>
+      </div>
+      <p style={{margin:"0 0 10px",color:"#94A3B8"}}>
+        Para receber notificações mesmo com o navegador fechado, instale o app no celular.
+      </p>
+      <button onClick={onInstall} style={{background:"#0ABFCA",color:"#050709",border:"none",borderRadius:"8px",padding:"8px 14px",fontWeight:700,cursor:"pointer",fontSize:"13px"}}>
+        📲 Instalar CompraFácil
+      </button>
+    </div>
+  );
+}
 
 // ── CONSTANTES ────────────────────────────────────────────────────────────
 const ROLES = {
@@ -875,8 +894,11 @@ function AppInner() {
   const [toast,    setToast]    = useState(null);
   const originalTitleRef = useRef(typeof document !== "undefined" ? document.title : "CompraFácil");
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as unknown as {MSStream?:unknown}).MSStream;
+  const isAndroid = /Android/i.test(navigator.userAgent);
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as unknown as {standalone?:boolean}).standalone === true;
   const [showIOSInstall, setShowIOSInstall] = useState(isIOS && !isStandalone);
+  const [showAndroidInstall, setShowAndroidInstall] = useState(false);
+  const deferredInstallPromptRef = useRef<any>(null);
 
   // Session persists in localStorage only
   useEffect(()=>{ LS.set("cf_session",session);},[session]);
@@ -889,31 +911,67 @@ function AppInner() {
     setUserNtfyTopic((currentUser?.ntfy_topic as string) ?? null);
   }, [session?.id, users]);
 
-  // ── PUSH: estado e refs ───────────────────────────────────────────────────
+  // ── PUSH/PWA: estado e refs ────────────────────────────────────────────────
   const [notifStatus, setNotifStatus] = useState<NotificationPermission>(
     typeof Notification !== 'undefined' ? Notification.permission : 'default'
   );
   const swRegRef = useRef<ServiceWorkerRegistration|null>(null);
 
-  // Registra SW e assina automaticamente se permissão já foi concedida
+  // Registra SW sempre (necessário para instalabilidade do PWA no Android)
   useEffect(()=>{
-    if (!session?.id || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    if (!('serviceWorker' in navigator)) return;
     navigator.serviceWorker.register('/sw.js').then(async (reg)=>{
       swRegRef.current = reg;
       await navigator.serviceWorker.ready;
-      const perm = Notification.permission;
-      setNotifStatus(perm);
-      if (perm === 'granted') await subscribePush(reg, session.id);
+      if (typeof Notification !== "undefined") {
+        setNotifStatus(Notification.permission);
+      }
     }).catch(e=>console.warn('[SW]', e));
-  }, [session?.id]);
+  }, []);
+
+  // Assina push automaticamente quando já há permissão e usuário logado
+  useEffect(()=>{
+    if (!session?.id || !swRegRef.current || !('PushManager' in window)) return;
+    if (notifStatus === 'granted') {
+      subscribePush(swRegRef.current, session.id).catch(e => console.warn('[Push subscribe auto]', e));
+    }
+  }, [session?.id, notifStatus]);
+
+  // Captura evento de instalação no Android (beforeinstallprompt)
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      deferredInstallPromptRef.current = e;
+      if (isAndroid && !isStandalone) setShowAndroidInstall(true);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, [isAndroid, isStandalone]);
 
   // Função chamada APENAS por gesto do usuário (botão) — obrigatório no iOS
   const enableNotifications = useCallback(async ()=>{
-    if (!swRegRef.current || !session?.id) return;
+    if (!session?.id || !('Notification' in window)) return;
+    let reg = swRegRef.current;
+    if (!reg && 'serviceWorker' in navigator) {
+      reg = await navigator.serviceWorker.register('/sw.js');
+      swRegRef.current = reg;
+    }
+    if (!reg) return;
     const perm = await Notification.requestPermission();
     setNotifStatus(perm);
-    if (perm === 'granted') await subscribePush(swRegRef.current, session.id);
+    if (perm === 'granted') await subscribePush(reg, session.id);
   }, [session?.id]);
+
+  const installAndroidApp = useCallback(async () => {
+    const deferredPrompt = deferredInstallPromptRef.current;
+    if (!deferredPrompt) return;
+    await deferredPrompt.prompt();
+    const choiceResult = await deferredPrompt.userChoice;
+    if (choiceResult?.outcome === 'accepted') {
+      setShowAndroidInstall(false);
+      deferredInstallPromptRef.current = null;
+    }
+  }, []);
 
   // ── BOOT: load users + orders from Supabase ──────────────────────────────
   useEffect(()=>{
@@ -1064,7 +1122,9 @@ function AppInner() {
 
   const user = users.find(u=>u.id===session.id)||session;
   const props = { user, users, setUsers:dbSetUsers, orders, setOrders:dbSetOrders, onLogout:logout, showToast, toast, lightbox, setLightbox };
-  const showNotifBanner = notifStatus === 'default' && 'PushManager' in window && isRunningStandalone();
+  const showNotifBanner = notifStatus === 'default'
+    && 'PushManager' in window
+    && (!isIOS || isRunningStandalone());
 
   let screen;
   if (isAdmin(user))         screen = <AdminScreen    {...props} pendingApproval={pendingApproval}/>;
@@ -1076,6 +1136,12 @@ function AppInner() {
     <>
       {showNotifBanner && <NotifBanner onEnable={enableNotifications} onDismiss={()=>setNotifStatus('denied')}/>}
       {showIOSInstall  && <IOSInstallBanner onDismiss={()=>setShowIOSInstall(false)}/>}
+      {showAndroidInstall && (
+        <AndroidInstallBanner
+          onInstall={installAndroidApp}
+          onDismiss={() => setShowAndroidInstall(false)}
+        />
+      )}
       {session && isRunningStandalone() && (
         <NtfySetupCard
           userId={session.id}

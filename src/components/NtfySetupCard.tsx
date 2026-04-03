@@ -61,7 +61,10 @@ export function NtfySetupCard({ userId, currentNtfyTopic, onConfigured, onRevoke
 
   async function handleOpenDeepLink() {
     if (!config) return;
-    const deepLink = `ntfy://${config.server_url.replace("https://", "")}/${config.topic}?auth=${btoa(config.token)}`;
+    const host = config.server_url
+      .replace(/^https?:\/\//, "")
+      .replace(/\/+$/, "");
+    const deepLink = `ntfy://subscribe/${host}/${config.topic}?auth=${encodeURIComponent(config.token)}`;
     await navigator.clipboard.writeText(deepLink).catch(() => {});
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
