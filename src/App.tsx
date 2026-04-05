@@ -202,6 +202,12 @@ const DEFAULT_USERS = [
 ];
 
 const parsePriority = (raw) => String(raw||"").toUpperCase().trim()==="URGENTE"?"urgente":"normal";
+const extractNtfyTopic = (row) => {
+  if (!row) return null;
+  if (typeof row.endpoint === "string" && row.endpoint.startsWith("ntfy:")) return row.endpoint.slice(5);
+  if (row.subscription && typeof row.subscription === "object" && typeof row.subscription.topic === "string") return row.subscription.topic;
+  return null;
+};
 
 // ── CSS ───────────────────────────────────────────────────────────────────
 const CSS = `
@@ -889,6 +895,7 @@ function AppInner() {
   const [session,  setSession]  = useState(()=>LS.get("cf_session",null));
   const [users,    setUsers]    = useState([]);
   const [userNtfyTopic, setUserNtfyTopic] = useState<string | null>(null);
+  const [ntfyTopicsByUser, setNtfyTopicsByUser] = useState<Record<string, string>>({});
   const [orders,   setOrders]   = useState([]);
   const [lightbox, setLightbox] = useState(null);
   const [toast,    setToast]    = useState(null);
@@ -903,13 +910,11 @@ function AppInner() {
   // Session persists in localStorage only
   useEffect(()=>{ LS.set("cf_session",session);},[session]);
 
-  // Derivar ntfy_topic do estado 'users' quando session ou users mudar
+  // Derivar ntfy_topic a partir do canal sintético em push_subscriptions (endpoint ntfy:topic)
   useEffect(() => {
-    if (!session?.id || !users.length) return;
-    const currentUser = (users as Array<Record<string, unknown>>)
-      .find(u => u.id === session.id);
-    setUserNtfyTopic((currentUser?.ntfy_topic as string) ?? null);
-  }, [session?.id, users]);
+    if (!session?.id) return;
+    setUserNtfyTopic(ntfyTopicsByUser[session.id] ?? null);
+  }, [session?.id, ntfyTopicsByUser]);
 
   // ── PUSH/PWA: estado e refs ────────────────────────────────────────────────
   const [notifStatus, setNotifStatus] = useState<NotificationPermission>(
@@ -988,6 +993,22 @@ function AppInner() {
       } else {
         setUsers(usersData);
       }
+      // Load ntfy channels (schema-agnóstico: evita depender de users.ntfy_topic)
+      const { data: ntfyRows, error: ntfyErr } = await supabase
+        .from("push_subscriptions")
+        .select("user_id,endpoint,subscription")
+        .like("endpoint", "ntfy:%");
+      if (ntfyErr) {
+        console.error("[Supabase] boot ntfy channels:", ntfyErr);
+      } else {
+        const map = (ntfyRows || []).reduce((acc, row) => {
+          const topic = extractNtfyTopic(row);
+          if (topic && row.user_id) acc[row.user_id] = topic;
+          return acc;
+        }, {});
+        setNtfyTopicsByUser(map);
+      }
+
       // Load orders
       const { data: ordersData, error: ordersErr } = await supabase
         .from("orders").select("*").order("inserted_at", { ascending: true });
@@ -1146,11 +1167,20 @@ function AppInner() {
         <NtfySetupCard
           userId={session.id}
           currentNtfyTopic={userNtfyTopic}
-          onConfigured={() => {
-            supabase.from("users").select("*").eq("deleted", false)
-              .then(({ data }) => { if (data) setUsers(data); });
+          onConfigured={(topic) => {
+            if (!session?.id) return;
+            setNtfyTopicsByUser((prev) => ({ ...prev, [session.id]: topic }));
+            setUserNtfyTopic(topic);
           }}
-          onRevoked={() => setUserNtfyTopic(null)}
+          onRevoked={() => {
+            if (!session?.id) return;
+            setNtfyTopicsByUser((prev) => {
+              const next = { ...prev };
+              delete next[session.id];
+              return next;
+            });
+            setUserNtfyTopic(null);
+          }}
         />
       )}
       {screen}
