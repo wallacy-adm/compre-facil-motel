@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
 
 type SetupState = "idle" | "loading" | "ready" | "configured" | "error";
 
@@ -31,17 +30,16 @@ export function NtfySetupCard({ userId, currentNtfyTopic, onConfigured, onRevoke
     setState("loading");
     setErrorMsg("");
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Sessão não encontrada. Faça login novamente.");
-
       const res = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-ntfy-token`,
         {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${session.access_token}`,
+            "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+            "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
             "Content-Type": "application/json",
           },
+          body: JSON.stringify({ user_id: userId }),
         }
       );
 
@@ -93,14 +91,16 @@ export function NtfySetupCard({ userId, currentNtfyTopic, onConfigured, onRevoke
   async function handleRevoke() {
     setState("loading");
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Sessão não encontrada.");
-
       const revokeRes = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-ntfy-token`,
         {
           method: "DELETE",
-          headers: { "Authorization": `Bearer ${session.access_token}` },
+          headers: {
+            "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+            "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ user_id: userId }),
         }
       );
       if (!revokeRes.ok) {

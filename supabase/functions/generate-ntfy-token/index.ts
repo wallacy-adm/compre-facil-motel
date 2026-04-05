@@ -7,7 +7,6 @@ const NTFY_BASE_URL        = Deno.env.get("NTFY_BASE_URL")        ?? "";
 const NTFY_ADMIN_BASIC_AUTH = Deno.env.get("NTFY_ADMIN_BASIC_AUTH") ?? ""; // "Basic base64(admin:password)"
 const SUPABASE_URL          = Deno.env.get("SUPABASE_URL")          ?? "";
 const SERVICE_KEY           = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-const SUPABASE_ANON_KEY     = Deno.env.get("SUPABASE_ANON_KEY")    ?? "";
 
 // Validate required environment variables at startup
 const missingVars = [
@@ -26,18 +25,21 @@ const cors = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Valida o JWT do usuário chamador via Supabase Auth
-async function getUserFromJWT(authHeader: string | null): Promise<{ id: string } | null> {
-  if (!authHeader) return null;
-  const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
-    headers: {
-      "Authorization": authHeader,
-      "apikey": SUPABASE_ANON_KEY,
-    },
-  });
-  if (!res.ok) return null;
-  const data = await res.json();
-  return data?.id ? { id: data.id } : null;
+// Valida que o user_id existe na tabela users (auth customizada do app)
+async function validateUserId(userId: string): Promise<boolean> {
+  if (!userId || typeof userId !== "string") return false;
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/users?id=eq.${encodeURIComponent(userId)}&select=id&deleted=eq.false`,
+    {
+      headers: {
+        "apikey": SERVICE_KEY,
+        "Authorization": `Bearer ${SERVICE_KEY}`,
+      },
+    }
+  );
+  if (!res.ok) return false;
+  const rows = await res.json();
+  return Array.isArray(rows) && rows.length > 0;
 }
 
 // Busca dados do usuário na tabela users (service role)
@@ -116,18 +118,33 @@ async function revokeNtfyToken(token: string): Promise<void> {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
-  // Autenticar usuário via JWT
-  const user = await getUserFromJWT(req.headers.get("Authorization"));
-  if (!user) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401, headers: { ...cors, "Content-Type": "application/json" },
+  // Ler user_id do body (app usa auth customizada, não Supabase Auth)
+  let userId: string | null = null;
+  try {
+    const body = await req.json();
+    userId = body?.user_id ?? null;
+  } catch {
+    // body vazio ou inválido
+  }
+
+  if (!userId) {
+    return new Response(JSON.stringify({ error: "user_id obrigatório" }), {
+      status: 400, headers: { ...cors, "Content-Type": "application/json" },
     });
   }
 
-  const userRecord = await getUser(user.id);
-  if (!userRecord) {
-    return new Response(JSON.stringify({ error: "User not found" }), {
+  // Validar que o user existe na tabela users
+  const exists = await validateUserId(userId);
+  if (!exists) {
+    return new Response(JSON.stringify({ error: "Usuário não encontrado" }), {
       status: 404, headers: { ...cors, "Content-Type": "application/json" },
+    });
+  }
+
+  const userRecord = await getUser(userId);
+  if (!userRecord) {
+    return new Response(JSON.stringify({ error: "Erro ao carregar usuário" }), {
+      status: 500, headers: { ...cors, "Content-Type": "application/json" },
     });
   }
 
@@ -135,7 +152,7 @@ Deno.serve(async (req) => {
   if (req.method === "POST") {
     // Se já tem token, retornar o existente
     if (userRecord.ntfy_token && userRecord.ntfy_topic) {
-      console.log("[generate-ntfy-token] Retornando token existente para user:", user.id.slice(0, 8));
+      console.log("[generate-ntfy-token] Retornando token existente para user:", userId.slice(0, 8));
       return new Response(JSON.stringify({
         token: userRecord.ntfy_token,
         topic: userRecord.ntfy_topic,
@@ -144,8 +161,8 @@ Deno.serve(async (req) => {
     }
 
     // Gerar novo token
-    const topic = `pedidos-${user.id.slice(0, 8)}`;
-    const label = `comprafacil-user-${user.id.slice(0, 8)}`;
+    const topic = `pedidos-${userId.slice(0, 8)}`;
+    const label = `comprafacil-user-${userId.slice(0, 8)}`;
     const token = await createNtfyToken(label);
 
     if (!token) {
@@ -154,11 +171,11 @@ Deno.serve(async (req) => {
       });
     }
 
-    const saved = await saveNtfyToken(user.id, token, topic);
+    const saved = await saveNtfyToken(userId, token, topic);
     if (saved) {
-      console.log("[generate-ntfy-token] Token gerado e salvo para user:", user.id.slice(0, 8));
+      console.log("[generate-ntfy-token] Token gerado e salvo para user:", userId.slice(0, 8));
     } else {
-      console.warn("[generate-ntfy-token] Token criado no ntfy mas não persistido no DB para user:", user.id.slice(0, 8));
+      console.warn("[generate-ntfy-token] Token criado no ntfy mas não persistido no DB para user:", userId.slice(0, 8));
     }
 
     return new Response(JSON.stringify({ token, topic, server_url: NTFY_BASE_URL }), {
@@ -171,9 +188,9 @@ Deno.serve(async (req) => {
     if (userRecord.ntfy_token) {
       await revokeNtfyToken(userRecord.ntfy_token as string);
     }
-    const cleared = await saveNtfyToken(user.id, null, null);
+    const cleared = await saveNtfyToken(userId, null, null);
     if (!cleared) {
-      console.warn("[generate-ntfy-token] Falha ao limpar token do DB para user:", user.id.slice(0, 8));
+      console.warn("[generate-ntfy-token] Falha ao limpar token do DB para user:", userId.slice(0, 8));
     }
     return new Response(JSON.stringify({ revoked: true }), {
       headers: { ...cors, "Content-Type": "application/json" },
