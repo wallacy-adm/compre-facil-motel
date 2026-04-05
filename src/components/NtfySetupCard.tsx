@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 type SetupState = "idle" | "loading" | "ready" | "configured" | "error";
 
@@ -30,26 +31,14 @@ export function NtfySetupCard({ userId, currentNtfyTopic, onConfigured, onRevoke
     setState("loading");
     setErrorMsg("");
     try {
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-ntfy-token`,
-        {
-          method: "POST",
-          headers: {
-            "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-            "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ user_id: userId }),
-        }
-      );
+      const { data, error } = await supabase.functions.invoke("generate-ntfy-token", {
+        body: { user_id: userId },
+      });
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData?.error ?? `Erro HTTP ${res.status}`);
-      }
+      if (error) throw new Error(error.message ?? "Erro na requisição");
 
-      const data: NtfyConfig = await res.json();
-      setConfig(data);
+      const config = data as NtfyConfig;
+      setConfig(config);
       setState("ready");
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : String(err));
@@ -91,22 +80,11 @@ export function NtfySetupCard({ userId, currentNtfyTopic, onConfigured, onRevoke
   async function handleRevoke() {
     setState("loading");
     try {
-      const revokeRes = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-ntfy-token`,
-        {
-          method: "DELETE",
-          headers: {
-            "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-            "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ user_id: userId }),
-        }
-      );
-      if (!revokeRes.ok) {
-        const errData = await revokeRes.json().catch(() => ({}));
-        throw new Error(errData?.error ?? `Erro HTTP ${revokeRes.status}`);
-      }
+      const { error } = await supabase.functions.invoke("generate-ntfy-token", {
+        method: "DELETE",
+        body: { user_id: userId },
+      });
+      if (error) throw new Error(error.message ?? "Erro ao revogar");
       setConfig(null);
       setState("idle");
       onRevoked?.();
