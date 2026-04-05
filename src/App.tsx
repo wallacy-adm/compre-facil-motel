@@ -1142,7 +1142,7 @@ function AppInner() {
           onDismiss={() => setShowAndroidInstall(false)}
         />
       )}
-      {session && isRunningStandalone() && (
+      {session && (isRunningStandalone() || isIOS) && (
         <NtfySetupCard
           userId={session.id}
           currentNtfyTopic={userNtfyTopic}
