@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
-// Servidor público ntfy.sh — sem auth necessário para tópicos aleatórios
 const NTFY_PUBLIC_SERVER = "https://ntfy.sh";
 
 type SetupState = "idle" | "loading" | "ready" | "configured" | "error";
@@ -13,6 +12,47 @@ interface Props {
   onRevoked?: () => void;
 }
 
+function createTopic(userId: string): string {
+  return `cf-${userId.slice(0, 8)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+async function saveTopicInPushSubscriptions(userId: string, topic: string) {
+  const endpoint = `ntfy:${topic}`;
+  const { error } = await supabase.from("push_subscriptions").upsert(
+    {
+      user_id: userId,
+      endpoint,
+      subscription: { channel: "ntfy", topic },
+    },
+    { onConflict: "endpoint" },
+  );
+  if (error) throw new Error(error.message);
+}
+
+async function removeTopicFromPushSubscriptions(userId: string) {
+  const { error } = await supabase
+    .from("push_subscriptions")
+    .delete()
+    .eq("user_id", userId)
+    .like("endpoint", "ntfy:%");
+  if (error) throw new Error(error.message);
+}
+
+async function fetchExistingTopic(userId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("push_subscriptions")
+    .select("endpoint,subscription")
+    .eq("user_id", userId)
+    .like("endpoint", "ntfy:%")
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  if (typeof data.endpoint === "string" && data.endpoint.startsWith("ntfy:")) return data.endpoint.slice(5);
+  const sub = data.subscription as Record<string, unknown> | null;
+  return typeof sub?.topic === "string" ? sub.topic : null;
+}
+
 export function NtfySetupCard({ userId, currentNtfyTopic, onConfigured, onRevoked }: Props) {
   const [state, setState] = useState<SetupState>(currentNtfyTopic ? "configured" : "idle");
   const [topic, setTopic] = useState<string | null>(currentNtfyTopic ?? null);
@@ -20,25 +60,37 @@ export function NtfySetupCard({ userId, currentNtfyTopic, onConfigured, onRevoke
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    setState(currentNtfyTopic ? "configured" : "idle");
-    setTopic(currentNtfyTopic ?? null);
-  }, [currentNtfyTopic]);
+    let mounted = true;
+
+    async function hydrateTopic() {
+      if (currentNtfyTopic) {
+        if (!mounted) return;
+        setState("configured");
+        setTopic(currentNtfyTopic);
+        return;
+      }
+
+      const existing = await fetchExistingTopic(userId);
+      if (!mounted) return;
+      if (existing) {
+        setTopic(existing);
+        setState("configured");
+      } else {
+        setTopic(null);
+        setState("idle");
+      }
+    }
+
+    hydrateTopic();
+    return () => { mounted = false; };
+  }, [currentNtfyTopic, userId]);
 
   async function handleSetup() {
     setState("loading");
     setErrorMsg("");
     try {
-      // Gera tópico único baseado no userId — sem edge function
-      const newTopic = `cf-${userId.slice(0, 8)}-${Math.random().toString(36).slice(2, 7)}`;
-
-      // Salva diretamente no banco via Supabase client
-      const { error } = await supabase
-        .from("users")
-        .update({ ntfy_topic: newTopic })
-        .eq("id", userId);
-
-      if (error) throw new Error(error.message);
-
+      const newTopic = createTopic(userId);
+      await saveTopicInPushSubscriptions(userId, newTopic);
       setTopic(newTopic);
       setState("ready");
     } catch (err) {
@@ -49,7 +101,6 @@ export function NtfySetupCard({ userId, currentNtfyTopic, onConfigured, onRevoke
 
   async function handleOpenDeepLink() {
     if (!topic) return;
-    // ntfys:// = HTTPS server (ntfy.sh usa HTTPS)
     const deepLink = `ntfys://ntfy.sh/${topic}`;
     await navigator.clipboard.writeText(deepLink).catch(() => {});
     setCopied(true);
@@ -63,7 +114,7 @@ export function NtfySetupCard({ userId, currentNtfyTopic, onConfigured, onRevoke
       await fetch(`${NTFY_PUBLIC_SERVER}/${topic}`, {
         method: "POST",
         headers: {
-          "Title": "✅ Teste CompraFácil",
+          Title: "✅ Teste CompraFácil",
           "Content-Type": "text/plain",
         },
         body: "Notificações iOS funcionando! 🎉",
@@ -78,13 +129,7 @@ export function NtfySetupCard({ userId, currentNtfyTopic, onConfigured, onRevoke
   async function handleRevoke() {
     setState("loading");
     try {
-      const { error } = await supabase
-        .from("users")
-        .update({ ntfy_topic: null })
-        .eq("id", userId);
-
-      if (error) throw new Error(error.message);
-
+      await removeTopicFromPushSubscriptions(userId);
       setTopic(null);
       setState("idle");
       onRevoked?.();
@@ -192,7 +237,10 @@ export function NtfySetupCard({ userId, currentNtfyTopic, onConfigured, onRevoke
         <p className="font-medium text-red-400">⚠️ Erro na configuração</p>
         <p className="text-gray-400 text-xs">{errorMsg || "Erro desconhecido. Verifique a conexão."}</p>
         <button
-          onClick={() => { setState("idle"); setErrorMsg(""); }}
+          onClick={() => {
+            setState("idle");
+            setErrorMsg("");
+          }}
           className="w-full rounded-lg border border-gray-600 text-gray-300 hover:bg-gray-700 py-2 px-4 text-sm font-medium transition-colors"
         >
           Tentar novamente
