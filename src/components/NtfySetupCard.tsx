@@ -1,13 +1,10 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
-type SetupState = "idle" | "loading" | "ready" | "configured" | "error";
+// Servidor público ntfy.sh — sem auth necessário para tópicos aleatórios
+const NTFY_PUBLIC_SERVER = "https://ntfy.sh";
 
-interface NtfyConfig {
-  token: string;
-  topic: string;
-  server_url: string;
-}
+type SetupState = "idle" | "loading" | "ready" | "configured" | "error";
 
 interface Props {
   userId: string;
@@ -18,27 +15,31 @@ interface Props {
 
 export function NtfySetupCard({ userId, currentNtfyTopic, onConfigured, onRevoked }: Props) {
   const [state, setState] = useState<SetupState>(currentNtfyTopic ? "configured" : "idle");
-  const [config, setConfig] = useState<NtfyConfig | null>(null);
+  const [topic, setTopic] = useState<string | null>(currentNtfyTopic ?? null);
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [copied, setCopied] = useState(false);
 
-  // Sincronizar estado quando currentNtfyTopic mudar externamente
   useEffect(() => {
     setState(currentNtfyTopic ? "configured" : "idle");
+    setTopic(currentNtfyTopic ?? null);
   }, [currentNtfyTopic]);
 
   async function handleSetup() {
     setState("loading");
     setErrorMsg("");
     try {
-      const { data, error } = await supabase.functions.invoke("generate-ntfy-token", {
-        body: { user_id: userId },
-      });
+      // Gera tópico único baseado no userId — sem edge function
+      const newTopic = `cf-${userId.slice(0, 8)}-${Math.random().toString(36).slice(2, 7)}`;
 
-      if (error) throw new Error(error.message ?? "Erro na requisição");
+      // Salva diretamente no banco via Supabase client
+      const { error } = await supabase
+        .from("users")
+        .update({ ntfy_topic: newTopic })
+        .eq("id", userId);
 
-      const config = data as NtfyConfig;
-      setConfig(config);
+      if (error) throw new Error(error.message);
+
+      setTopic(newTopic);
       setState("ready");
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : String(err));
@@ -47,11 +48,9 @@ export function NtfySetupCard({ userId, currentNtfyTopic, onConfigured, onRevoke
   }
 
   async function handleOpenDeepLink() {
-    if (!config) return;
-    const serverHost = config.server_url.replace(/^https?:\/\//, "");
-    const scheme = config.server_url.startsWith("https") ? "ntfys" : "ntfy";
-    const deepLink = `${scheme}://${serverHost}/${config.topic}?auth=${btoa(`:${config.token}`)}`;
-
+    if (!topic) return;
+    // ntfys:// = HTTPS server (ntfy.sh usa HTTPS)
+    const deepLink = `ntfys://ntfy.sh/${topic}`;
     await navigator.clipboard.writeText(deepLink).catch(() => {});
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -59,19 +58,18 @@ export function NtfySetupCard({ userId, currentNtfyTopic, onConfigured, onRevoke
   }
 
   async function handleTest() {
-    if (!config) return;
+    if (!topic) return;
     try {
-      await fetch(`${config.server_url}/${config.topic}`, {
+      await fetch(`${NTFY_PUBLIC_SERVER}/${topic}`, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${config.token}`,
           "Title": "✅ Teste CompraFácil",
           "Content-Type": "text/plain",
         },
         body: "Notificações iOS funcionando! 🎉",
       });
     } catch {
-      // Ignorar erro de CORS — a notificação foi enviada de qualquer forma
+      // CORS esperado — notificação foi enviada
     }
     setState("configured");
     onConfigured?.();
@@ -80,12 +78,14 @@ export function NtfySetupCard({ userId, currentNtfyTopic, onConfigured, onRevoke
   async function handleRevoke() {
     setState("loading");
     try {
-      const { error } = await supabase.functions.invoke("generate-ntfy-token", {
-        method: "DELETE",
-        body: { user_id: userId },
-      });
-      if (error) throw new Error(error.message ?? "Erro ao revogar");
-      setConfig(null);
+      const { error } = await supabase
+        .from("users")
+        .update({ ntfy_topic: null })
+        .eq("id", userId);
+
+      if (error) throw new Error(error.message);
+
+      setTopic(null);
       setState("idle");
       onRevoked?.();
     } catch (err) {
@@ -143,7 +143,7 @@ export function NtfySetupCard({ userId, currentNtfyTopic, onConfigured, onRevoke
     );
   }
 
-  if (state === "ready" && config) {
+  if (state === "ready" && topic) {
     return (
       <div className={`${cardBase} border-yellow-500/30 bg-yellow-500/5`}>
         <p className="font-medium text-gray-200">📲 Quase lá! 2 passos:</p>
@@ -174,7 +174,7 @@ export function NtfySetupCard({ userId, currentNtfyTopic, onConfigured, onRevoke
           {copied ? "✅ Link copiado!" : "🔗 Abrir ntfy configurado"}
         </button>
         <p className="text-gray-500 text-xs">
-          Se o app não abrir automaticamente, abra o app ntfy manualmente e depois toque aqui de novo.
+          Se o app não abrir automaticamente, abra o ntfy manualmente e toque aqui de novo.
         </p>
         <button
           onClick={handleTest}
