@@ -6,7 +6,7 @@ const VAPID_EMAIL       = Deno.env.get("VAPID_EMAIL")       || "mailto:admin@car
 const WEBHOOK_SECRET    = Deno.env.get("WEBHOOK_SECRET") ?? "comprafacil-push-2025";
 const SUPABASE_URL      = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY       = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-const NTFY_BASE_URL        = Deno.env.get("NTFY_BASE_URL")        ?? "";
+const NTFY_BASE_URL        = Deno.env.get("NTFY_BASE_URL")        || "https://ntfy.sh";
 const NTFY_PUBLISHER_TOKEN = Deno.env.get("NTFY_PUBLISHER_TOKEN") ?? "";
 
 webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
@@ -38,20 +38,20 @@ async function sendNtfyNotification(
   body: string,
   clickUrl: string,
 ): Promise<void> {
-  if (!NTFY_BASE_URL || !NTFY_PUBLISHER_TOKEN) {
-    console.log("[send-push][ntfy] Canal 2 desabilitado (env vars não configuradas)");
-    return;
+  const headers: Record<string, string> = {
+    "Title":        title,
+    "Priority":     "high",
+    "Tags":         "bell",
+    "Click":        clickUrl,
+    "Content-Type": "text/plain",
+  };
+  // Adiciona auth apenas se token configurado (ntfy.sh público não precisa)
+  if (NTFY_PUBLISHER_TOKEN) {
+    headers["Authorization"] = `Bearer ${NTFY_PUBLISHER_TOKEN}`;
   }
   const res = await fetch(`${NTFY_BASE_URL}/${topic}`, {
     method: "POST",
-    headers: {
-      "Authorization": `Bearer ${NTFY_PUBLISHER_TOKEN}`,
-      "Title":         title,
-      "Priority":      "high",
-      "Tags":          "bell",
-      "Click":         clickUrl,
-      "Content-Type":  "text/plain",
-    },
+    headers,
     body: body,
   });
   if (!res.ok) {
