@@ -47,7 +47,7 @@ const CarpeDiemLogo = memo(({ width = 190, height = undefined }: { width?: numbe
   const VW = 300, VH = 148;
   const h = height ?? Math.round(width * VH / VW);
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${VW} ${VH}`} width={width} height={h} style={{display:"block"}}>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox={`-20 0 ${VW + 40} ${VH}`} width={width} height={h} style={{display:"block", overflow:"visible"}}>
       {/* Transparent background — no black rect */}
       {/* CARPE — right-anchored to gap center */}
       <text x="140" y="82" fontFamily="Cinzel,Georgia,serif" fontSize="56" fill="#f1f5f9" textAnchor="end">CARPE</text>
