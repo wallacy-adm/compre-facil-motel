@@ -1,13 +1,23 @@
 import webpush from "npm:web-push@3.6.7";
 
-const VAPID_PUBLIC_KEY  = Deno.env.get("VAPID_PUBLIC_KEY")  || "BLUGwL3JIYZxi08-Pc7ULoJv2zo2SUjWKpHbypCFzK6wEhxOveo86kl0yLoDfanhL8N-65C2_RE5PY3YzmN2Jlo";
+const VAPID_PUBLIC_KEY = Deno.env.get("VAPID_PUBLIC_KEY") || "BLUGwL3JIYZxi08-Pc7ULoJv2zo2SUjWKpHbypCFzK6wEhxOveo86kl0yLoDfanhL8N-65C2_RE5PY3YzmN2Jlo";
 const VAPID_PRIVATE_KEY = Deno.env.get("VAPID_PRIVATE_KEY") || "1ERdsBRyjju0Y1Ept2Fb8BewMJ0e2HVJMEfZTdkecjg";
-const VAPID_EMAIL       = Deno.env.get("VAPID_EMAIL")       || "mailto:admin@carpediemmotel.com";
-const WEBHOOK_SECRET    = Deno.env.get("WEBHOOK_SECRET") ?? "comprafacil-push-2025";
-const SUPABASE_URL      = Deno.env.get("SUPABASE_URL") ?? "";
-const SERVICE_KEY       = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-const NTFY_BASE_URL        = Deno.env.get("NTFY_BASE_URL")        || "https://ntfy.sh";
+const VAPID_EMAIL = Deno.env.get("VAPID_EMAIL") || "mailto:admin@carpediemmotel.com";
+const WEBHOOK_SECRET = Deno.env.get("WEBHOOK_SECRET") ?? "comprafacil-push-2025";
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
+const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const NTFY_BASE_URL = Deno.env.get("NTFY_BASE_URL") || "https://ntfy.sh";
 const NTFY_PUBLISHER_TOKEN = Deno.env.get("NTFY_PUBLISHER_TOKEN") ?? "";
+const APP_BASE_URL = Deno.env.get("APP_BASE_URL") ?? "";
+
+const startupErrors: string[] = [];
+if (!SUPABASE_URL) startupErrors.push("SUPABASE_URL não configurada");
+if (!SERVICE_KEY) startupErrors.push("SUPABASE_SERVICE_ROLE_KEY não configurada");
+if (startupErrors.length > 0) {
+  console.error("[send-push] CONFIGURAÇÃO INVÁLIDA:", startupErrors.join(" | "));
+} else {
+  console.log("[send-push] Iniciando com configuração mínima válida");
+}
 
 webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 
@@ -17,50 +27,97 @@ const cors = {
 };
 
 const dbHeaders = {
-  "apikey": SERVICE_KEY,
-  "Authorization": `Bearer ${SERVICE_KEY}`,
+  apikey: SERVICE_KEY,
+  Authorization: `Bearer ${SERVICE_KEY}`,
   "Content-Type": "application/json",
 };
 
+function hasDbConfig(): boolean {
+  return Boolean(SUPABASE_URL && SERVICE_KEY);
+}
+
+function resolveClickUrl(pathOrUrl: string, req: Request): string {
+  if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
+  const requestBase = new URL(req.url).origin;
+  const appBase = APP_BASE_URL || requestBase;
+  return new URL(pathOrUrl || "/", appBase).toString();
+}
+
+function normalizeRoles(user: Record<string, unknown>): string[] {
+  const roleFromArray = Array.isArray(user.roles)
+    ? user.roles.filter((role): role is string => typeof role === "string")
+    : [];
+  const roleLegacy = typeof user.role === "string" ? [user.role] : [];
+  return [...new Set([...roleFromArray, ...roleLegacy])];
+}
+
 async function dbGet(path: string) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { headers: dbHeaders });
+  if (!hasDbConfig()) {
+    console.error("[send-push] dbGet abortado: configuração de banco ausente", path);
+    return [];
+  }
+
+  const url = `${SUPABASE_URL}/rest/v1/${path}`;
+  const res = await fetch(url, { headers: dbHeaders });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    console.error(`[send-push] dbGet falhou: status=${res.status} path=${path} err=${errText}`);
+    return [];
+  }
+
   return res.json();
 }
 
 async function dbDelete(path: string) {
-  await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { method: "DELETE", headers: dbHeaders });
+  if (!hasDbConfig()) return;
+
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    method: "DELETE",
+    headers: dbHeaders,
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    console.error(`[send-push] dbDelete falhou: status=${res.status} path=${path} err=${errText}`);
+  }
 }
 
-// ── CANAL 2: ntfy.sh ──────────────────────────────────────────────────────────
 async function sendNtfyNotification(
   topic: string,
   title: string,
   body: string,
   clickUrl: string,
 ): Promise<void> {
+  const sanitizedTopic = topic.trim();
+  if (!sanitizedTopic) throw new Error("topic vazio para ntfy");
+
   const headers: Record<string, string> = {
-    "Title":        title,
-    "Priority":     "high",
-    "Tags":         "bell",
-    "Click":        clickUrl,
+    Title: title,
+    Priority: "high",
+    Tags: "bell",
+    Click: clickUrl,
     "Content-Type": "text/plain",
   };
-  // Adiciona auth apenas se token configurado (ntfy.sh público não precisa)
+
   if (NTFY_PUBLISHER_TOKEN) {
-    headers["Authorization"] = `Bearer ${NTFY_PUBLISHER_TOKEN}`;
+    headers.Authorization = `Bearer ${NTFY_PUBLISHER_TOKEN}`;
   }
-  const res = await fetch(`${NTFY_BASE_URL}/${topic}`, {
+
+  const res = await fetch(`${NTFY_BASE_URL}/${sanitizedTopic}`, {
     method: "POST",
     headers,
-    body: body,
+    body,
   });
+
   if (!res.ok) {
     const errText = await res.text().catch(() => "");
-    const msg = `[send-push][ntfy] Falha: HTTP ${res.status} topic=${topic} err=${errText}`;
+    const msg = `[send-push][ntfy] Falha: HTTP ${res.status} topic=${sanitizedTopic} err=${errText}`;
     console.error(msg);
     throw new Error(msg);
   }
-  console.log(`[send-push][ntfy] Enviado: topic=${topic}`);
+
+  console.log(`[send-push][ntfy] Enviado: topic=${sanitizedTopic}`);
 }
 
 Deno.serve(async (req) => {
@@ -68,15 +125,29 @@ Deno.serve(async (req) => {
 
   try {
     if (req.headers.get("x-webhook-secret") !== WEBHOOK_SECRET) {
+      console.warn("[send-push] Webhook secret inválido");
       return new Response("Unauthorized", { status: 401 });
     }
 
+    if (!hasDbConfig()) {
+      return new Response(JSON.stringify({ error: "Edge function sem configuração de banco (SUPABASE_URL/SERVICE_KEY)" }), {
+        status: 503,
+        headers: { ...cors, "Content-Type": "application/json" },
+      });
+    }
+
     const body = await req.json();
-    const type   = body.type   as string;
-    const order  = body.record as Record<string, unknown>;
+    const type = body.type as string;
+    const order = body.record as Record<string, unknown>;
     const oldRec = body.old_record as Record<string, unknown> | null;
 
-    if (!order) return new Response(JSON.stringify({ skipped: "no record" }), { headers: { ...cors, "Content-Type": "application/json" } });
+    if (!order) {
+      return new Response(JSON.stringify({ skipped: "no record" }), {
+        headers: { ...cors, "Content-Type": "application/json" },
+      });
+    }
+
+    console.log(`[send-push] Evento recebido: type=${type} order.id=${order.id} status=${order.status}`);
 
     let notifyRoles: string[] = [];
     let notification: { title: string; body: string; tag: string; url: string } | null = null;
@@ -103,34 +174,50 @@ Deno.serve(async (req) => {
     } else if (type === "UPDATE" && order.status === "aprovado" && oldRec?.status !== "aprovado") {
       if (order.destino === "comprador") {
         notifyRoles = ["comprador"];
-        notification = { title: "✅ Pedido Aprovado", body: "Itens aprovados aguardando compra", tag: `order-buy-${order.id}`, url: "/" };
+        notification = {
+          title: "✅ Pedido Aprovado",
+          body: "Itens aprovados aguardando compra",
+          tag: `order-buy-${order.id}`,
+          url: "/",
+        };
       } else if (order.destino === "chefia") {
         notifyRoles = ["chefia"];
-        notification = { title: "✅ Pedido para Chefia", body: "Pedido aprovado aguardando compra", tag: `order-chefia-${order.id}`, url: "/" };
+        notification = {
+          title: "✅ Pedido para Chefia",
+          body: "Pedido aprovado aguardando compra",
+          tag: `order-chefia-${order.id}`,
+          url: "/",
+        };
       }
     }
 
     if (!notification || notifyRoles.length === 0) {
-      return new Response(JSON.stringify({ skipped: "no matching condition" }), { headers: { ...cors, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ skipped: "no matching condition" }), {
+        headers: { ...cors, "Content-Type": "application/json" },
+      });
     }
 
     const users = await dbGet("users?select=id,role,roles,ntfy_topic&deleted=eq.false");
-    const targetIds: string[] = (Array.isArray(users) ? users : [])
-      .filter((u: Record<string, unknown>) => {
-        const roles = Array.isArray(u.roles) ? u.roles : (u.role ? [u.role] : []);
-        return notifyRoles.some(r => (roles as string[]).includes(r));
-      })
-      .map((u: Record<string, unknown>) => u.id as string);
+    const targetUsers = (Array.isArray(users) ? users : []).filter((user: Record<string, unknown>) => {
+      const roles = normalizeRoles(user);
+      return notifyRoles.some((role) => roles.includes(role));
+    });
+    const targetIds = targetUsers.map((user: Record<string, unknown>) => user.id as string);
 
     if (targetIds.length === 0) {
-      return new Response(JSON.stringify({ skipped: "no target users" }), { headers: { ...cors, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ skipped: "no target users" }), {
+        headers: { ...cors, "Content-Type": "application/json" },
+      });
     }
 
-    const idsParam = targetIds.map(id => `"${id}"`).join(",");
+    const idsParam = targetIds.map((id) => `"${id}"`).join(",");
     const subs = await dbGet(`push_subscriptions?user_id=in.(${idsParam})&select=id,endpoint,subscription`);
 
     if (!Array.isArray(subs)) {
-      return new Response(JSON.stringify({ error: "Failed to fetch subscriptions" }), { status: 500, headers: { ...cors, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "Failed to fetch subscriptions" }), {
+        status: 500,
+        headers: { ...cors, "Content-Type": "application/json" },
+      });
     }
 
     const payload = JSON.stringify(notification);
@@ -149,41 +236,41 @@ Deno.serve(async (req) => {
           }
           throw err;
         }
-      })
+      }),
     );
 
-    const sent   = results.filter(r => r.status === "fulfilled").length;
-    const failed = results.filter(r => r.status === "rejected").length;
+    const sent = results.filter((r) => r.status === "fulfilled").length;
+    const failed = results.filter((r) => r.status === "rejected").length;
 
-    // ── CANAL 2: Disparar ntfy para usuários com ntfy_topic configurado ────────────
-    const ntfyTargets = (Array.isArray(users) ? users : []).filter((u: Record<string, unknown>) => {
-      return targetIds.includes(u.id as string) && typeof u.ntfy_topic === "string" && u.ntfy_topic.length > 0;
+    const clickUrl = resolveClickUrl(notification.url, req);
+    const ntfyTargets = targetUsers.filter((user: Record<string, unknown>) => {
+      return typeof user.ntfy_topic === "string" && user.ntfy_topic.trim().length > 0;
     });
 
     const ntfyResults = await Promise.allSettled(
-      ntfyTargets.map((u: Record<string, unknown>) =>
-        sendNtfyNotification(
-          u.ntfy_topic as string,
-          notification.title,
-          notification.body,
-          notification.url,
-        )
-      )
+      ntfyTargets.map((user: Record<string, unknown>) =>
+        sendNtfyNotification(user.ntfy_topic as string, notification.title, notification.body, clickUrl),
+      ),
     );
 
-    const ntfySent   = ntfyResults.filter(r => r.status === "fulfilled").length;
-    const ntfyFailed = ntfyResults.filter(r => r.status === "rejected").length;
-    console.log(`[send-push] Canal 1 (WebPush): ${sent}/${(Array.isArray(subs) ? subs.length : 0)}, Canal 2 (ntfy): ${ntfySent}/${ntfyTargets.length} enviados`);
+    const ntfySent = ntfyResults.filter((r) => r.status === "fulfilled").length;
+    const ntfyFailed = ntfyResults.filter((r) => r.status === "rejected").length;
 
-    return new Response(JSON.stringify({
-      sent: sent + ntfySent,   // compat: total enviados (ambos canais)
-      failed: failed + ntfyFailed, // compat: total falhas (ambos canais)
-      canal1: { sent, failed },
-      canal2: { sent: ntfySent, failed: ntfyFailed, targets: ntfyTargets.length },
-    }), {
-      headers: { ...cors, "Content-Type": "application/json" },
-    });
+    console.log(
+      `[send-push] Canal1 WebPush=${sent}/${subs.length} | Canal2 ntfy=${ntfySent}/${ntfyTargets.length} | order=${order.id}`,
+    );
 
+    return new Response(
+      JSON.stringify({
+        sent: sent + ntfySent,
+        failed: failed + ntfyFailed,
+        canal1: { sent, failed },
+        canal2: { sent: ntfySent, failed: ntfyFailed, targets: ntfyTargets.length },
+      }),
+      {
+        headers: { ...cors, "Content-Type": "application/json" },
+      },
+    );
   } catch (e) {
     console.error("[send-push] Erro:", e);
     return new Response(JSON.stringify({ error: String(e) }), {
