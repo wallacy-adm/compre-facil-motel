@@ -1,7 +1,7 @@
 import webpush from "npm:web-push@3.6.7";
 
-const VAPID_PUBLIC_KEY = Deno.env.get("VAPID_PUBLIC_KEY") || "BLUGwL3JIYZxi08-Pc7ULoJv2zo2SUjWKpHbypCFzK6wEhxOveo86kl0yLoDfanhL8N-65C2_RE5PY3YzmN2Jlo";
-const VAPID_PRIVATE_KEY = Deno.env.get("VAPID_PRIVATE_KEY") || "1ERdsBRyjju0Y1Ept2Fb8BewMJ0e2HVJMEfZTdkecjg";
+const VAPID_PUBLIC_KEY = Deno.env.get("VAPID_PUBLIC_KEY") ?? "";
+const VAPID_PRIVATE_KEY = Deno.env.get("VAPID_PRIVATE_KEY") ?? "";
 const VAPID_EMAIL = Deno.env.get("VAPID_EMAIL") || "mailto:admin@carpediemmotel.com";
 const WEBHOOK_SECRET = Deno.env.get("WEBHOOK_SECRET") ?? "comprafacil-push-2025";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -13,13 +13,17 @@ const APP_BASE_URL = Deno.env.get("APP_BASE_URL") ?? "";
 const startupErrors: string[] = [];
 if (!SUPABASE_URL) startupErrors.push("SUPABASE_URL não configurada");
 if (!SERVICE_KEY) startupErrors.push("SUPABASE_SERVICE_ROLE_KEY não configurada");
+if (!VAPID_PUBLIC_KEY) startupErrors.push("VAPID_PUBLIC_KEY não configurada");
+if (!VAPID_PRIVATE_KEY) startupErrors.push("VAPID_PRIVATE_KEY não configurada");
 if (startupErrors.length > 0) {
   console.error("[send-push] CONFIGURAÇÃO INVÁLIDA:", startupErrors.join(" | "));
 } else {
-  console.log("[send-push] Iniciando com configuração mínima válida");
+  console.log("[send-push] Iniciando com configuração válida");
 }
 
-webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
+  webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+}
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
