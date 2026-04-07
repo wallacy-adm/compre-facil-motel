@@ -21,7 +21,8 @@ if (startupErrors.length > 0) {
   console.log("[send-push] Iniciando com configuração válida");
 }
 
-if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
+const hasVapidConfig = Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
+if (hasVapidConfig) {
   webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 }
 
@@ -227,24 +228,31 @@ Deno.serve(async (req) => {
     const payload = JSON.stringify(notification);
     const pushOptions = { TTL: 86400, urgency: "high" as const };
 
-    const results = await Promise.allSettled(
-      subs.map(async (row: Record<string, unknown>) => {
-        try {
-          await webpush.sendNotification(row.subscription as webpush.PushSubscription, payload, pushOptions);
-        } catch (err: unknown) {
-          const status = (err as { statusCode?: number })?.statusCode;
-          if (status === 404 || status === 410) {
-            const id = row.id as string;
-            console.log(`[send-push] Removendo subscription morta (${status}): ${id}`);
-            await dbDelete(`push_subscriptions?id=eq.${id}`);
-          }
-          throw err;
-        }
-      }),
-    );
+    let sent = 0;
+    let failed = 0;
 
-    const sent = results.filter((r) => r.status === "fulfilled").length;
-    const failed = results.filter((r) => r.status === "rejected").length;
+    if (!hasVapidConfig) {
+      console.warn("[send-push] Canal1 WebPush IGNORADO: VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY não configuradas");
+    } else {
+      const results = await Promise.allSettled(
+        subs.map(async (row: Record<string, unknown>) => {
+          try {
+            await webpush.sendNotification(row.subscription as webpush.PushSubscription, payload, pushOptions);
+          } catch (err: unknown) {
+            const status = (err as { statusCode?: number })?.statusCode;
+            if (status === 404 || status === 410) {
+              const id = row.id as string;
+              console.log(`[send-push] Removendo subscription morta (${status}): ${id}`);
+              await dbDelete(`push_subscriptions?id=eq.${id}`);
+            }
+            throw err;
+          }
+        }),
+      );
+
+      sent = results.filter((r) => r.status === "fulfilled").length;
+      failed = results.filter((r) => r.status === "rejected").length;
+    }
 
     const clickUrl = resolveClickUrl(notification.url, req);
     const ntfyTargets = targetUsers.filter((user: Record<string, unknown>) => {
