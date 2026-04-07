@@ -1,0 +1,26 @@
+name: Apply Database Migration
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/migrations/**"
+  workflow_dispatch:
+
+jobs:
+  apply-migration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Apply latest trigger migration
+        run: |
+          supabase db query \
+            --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} \
+            "$(cat supabase/migrations/20260406000000_fix_trigger_auth_header.sql)"
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
