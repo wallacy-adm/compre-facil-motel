@@ -1150,7 +1150,11 @@ function AppInner() {
             supabase.from("users").select("*").eq("deleted", false)
               .then(({ data }) => { if (data) setUsers(data); });
           }}
-          onRevoked={() => setUserNtfyTopic(null)}
+          onRevoked={() => {
+            setUserNtfyTopic(null);
+            supabase.from("users").select("*").eq("deleted", false)
+              .then(({ data }) => { if (data) setUsers(data); });
+          }}
         />
       )}
       {screen}

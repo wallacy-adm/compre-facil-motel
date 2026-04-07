@@ -1,7 +1,7 @@
 import webpush from "npm:web-push@3.6.7";
 
-const VAPID_PUBLIC_KEY = Deno.env.get("VAPID_PUBLIC_KEY") || "BLUGwL3JIYZxi08-Pc7ULoJv2zo2SUjWKpHbypCFzK6wEhxOveo86kl0yLoDfanhL8N-65C2_RE5PY3YzmN2Jlo";
-const VAPID_PRIVATE_KEY = Deno.env.get("VAPID_PRIVATE_KEY") || "1ERdsBRyjju0Y1Ept2Fb8BewMJ0e2HVJMEfZTdkecjg";
+const VAPID_PUBLIC_KEY = Deno.env.get("VAPID_PUBLIC_KEY") ?? "";
+const VAPID_PRIVATE_KEY = Deno.env.get("VAPID_PRIVATE_KEY") ?? "";
 const VAPID_EMAIL = Deno.env.get("VAPID_EMAIL") || "mailto:admin@carpediemmotel.com";
 const WEBHOOK_SECRET = Deno.env.get("WEBHOOK_SECRET") ?? "comprafacil-push-2025";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -13,13 +13,18 @@ const APP_BASE_URL = Deno.env.get("APP_BASE_URL") ?? "";
 const startupErrors: string[] = [];
 if (!SUPABASE_URL) startupErrors.push("SUPABASE_URL não configurada");
 if (!SERVICE_KEY) startupErrors.push("SUPABASE_SERVICE_ROLE_KEY não configurada");
+if (!VAPID_PUBLIC_KEY) startupErrors.push("VAPID_PUBLIC_KEY não configurada");
+if (!VAPID_PRIVATE_KEY) startupErrors.push("VAPID_PRIVATE_KEY não configurada");
 if (startupErrors.length > 0) {
   console.error("[send-push] CONFIGURAÇÃO INVÁLIDA:", startupErrors.join(" | "));
 } else {
-  console.log("[send-push] Iniciando com configuração mínima válida");
+  console.log("[send-push] Iniciando com configuração válida");
 }
 
-webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+const hasVapidConfig = Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
+if (hasVapidConfig) {
+  webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+}
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -223,24 +228,31 @@ Deno.serve(async (req) => {
     const payload = JSON.stringify(notification);
     const pushOptions = { TTL: 86400, urgency: "high" as const };
 
-    const results = await Promise.allSettled(
-      subs.map(async (row: Record<string, unknown>) => {
-        try {
-          await webpush.sendNotification(row.subscription as webpush.PushSubscription, payload, pushOptions);
-        } catch (err: unknown) {
-          const status = (err as { statusCode?: number })?.statusCode;
-          if (status === 404 || status === 410) {
-            const id = row.id as string;
-            console.log(`[send-push] Removendo subscription morta (${status}): ${id}`);
-            await dbDelete(`push_subscriptions?id=eq.${id}`);
-          }
-          throw err;
-        }
-      }),
-    );
+    let sent = 0;
+    let failed = 0;
 
-    const sent = results.filter((r) => r.status === "fulfilled").length;
-    const failed = results.filter((r) => r.status === "rejected").length;
+    if (!hasVapidConfig) {
+      console.warn("[send-push] Canal1 WebPush IGNORADO: VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY não configuradas");
+    } else {
+      const results = await Promise.allSettled(
+        subs.map(async (row: Record<string, unknown>) => {
+          try {
+            await webpush.sendNotification(row.subscription as webpush.PushSubscription, payload, pushOptions);
+          } catch (err: unknown) {
+            const status = (err as { statusCode?: number })?.statusCode;
+            if (status === 404 || status === 410) {
+              const id = row.id as string;
+              console.log(`[send-push] Removendo subscription morta (${status}): ${id}`);
+              await dbDelete(`push_subscriptions?id=eq.${id}`);
+            }
+            throw err;
+          }
+        }),
+      );
+
+      sent = results.filter((r) => r.status === "fulfilled").length;
+      failed = results.filter((r) => r.status === "rejected").length;
+    }
 
     const clickUrl = resolveClickUrl(notification.url, req);
     const ntfyTargets = targetUsers.filter((user: Record<string, unknown>) => {
