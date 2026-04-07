@@ -60,3 +60,4 @@ BEGIN
   RAISE NOTICE 'Trigger orders_push_notify recriado COM Authorization header';
 END;
 $$;
+-- Applied via CI workflow
