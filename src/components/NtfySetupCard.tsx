@@ -18,11 +18,26 @@ export function NtfySetupCard({ userId, currentNtfyTopic, onConfigured, onRevoke
   const [topic, setTopic] = useState<string | null>(currentNtfyTopic ?? null);
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [copied, setCopied] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
     setState(currentNtfyTopic ? "configured" : "idle");
     setTopic(currentNtfyTopic ?? null);
+    setCollapsed(false);
   }, [currentNtfyTopic]);
+
+  useEffect(() => {
+    if (state !== "configured") {
+      setCollapsed(false);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setCollapsed(true);
+    }, 5000);
+
+    return () => window.clearTimeout(timer);
+  }, [state]);
 
   async function handleSetup() {
     setState("loading");
@@ -97,18 +112,45 @@ export function NtfySetupCard({ userId, currentNtfyTopic, onConfigured, onRevoke
   const cardBase = "rounded-xl border p-4 space-y-3 text-sm";
 
   if (state === "configured") {
+    if (collapsed) {
+      return (
+        <div className="rounded-xl border border-green-500/30 bg-green-500/10 px-4 py-2 text-sm">
+          <div className="flex items-center justify-between gap-3">
+            <span className="flex items-center gap-2 font-medium text-green-400">
+              <span>✅</span> Notificações iOS ativas
+            </span>
+            <button
+              onClick={handleRevoke}
+              className="text-xs text-gray-400 hover:text-red-400 transition-colors"
+            >
+              Desativar
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className={`${cardBase} border-green-500/30 bg-green-500/10`}>
         <div className="flex items-center justify-between">
           <span className="flex items-center gap-2 font-medium text-green-400">
             <span>✅</span> Notificações iOS ativas
           </span>
-          <button
-            onClick={handleRevoke}
-            className="text-xs text-gray-400 hover:text-red-400 transition-colors"
-          >
-            Desativar
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setCollapsed(true)}
+              className="text-xs text-gray-400 hover:text-gray-200 transition-colors"
+              aria-label="Fechar aviso"
+            >
+              ✕
+            </button>
+            <button
+              onClick={handleRevoke}
+              className="text-xs text-gray-400 hover:text-red-400 transition-colors"
+            >
+              Desativar
+            </button>
+          </div>
         </div>
         <p className="text-gray-400 text-xs">
           Você receberá alertas de pedidos mesmo com o iPhone bloqueado.
