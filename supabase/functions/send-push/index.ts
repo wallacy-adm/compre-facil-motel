@@ -152,14 +152,32 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`[send-push] Evento recebido: type=${type} order.id=${order.id} status=${order.status}`);
+    console.log(`[send-push] Evento recebido: type=${type} order.id=${order.id} status=${order.status} destino=${order.destino}`);
+
+    // Resolve destino: pode ser role string ("comprador","chefia") ou user ID ("2")
+    const knownRoles = ["comprador", "chefia", "admin", "estoque", "construcao", "manutencao"];
+    let destinoRole = order.destino as string;
+    if (!knownRoles.includes(destinoRole)) {
+      // destino é um user ID — buscar role do usuario
+      const allUsers = await dbGet("users?select=id,role,roles&deleted=eq.false");
+      const targetUser = (Array.isArray(allUsers) ? allUsers : []).find(
+        (u: Record<string, unknown>) => String(u.id) === String(order.destino)
+      );
+      if (targetUser) {
+        const roles = normalizeRoles(targetUser);
+        destinoRole = roles.includes("comprador") ? "comprador" :
+                      roles.includes("chefia") ? "chefia" :
+                      roles[0] || "unknown";
+        console.log(`[send-push] destino resolvido: ID ${order.destino} -> role ${destinoRole}`);
+      }
+    }
 
     let notifyRoles: string[] = [];
     let notification: { title: string; body: string; tag: string; url: string } | null = null;
 
     if (type === "INSERT" && order.status === "pendente") {
       const setor = (order.sectorLabel || order.sector_label || "setor") as string;
-      if (order.destino === "comprador") {
+      if (destinoRole === "comprador") {
         notifyRoles = ["comprador"];
         notification = {
           title: "🛒 Pedido para Compra",
@@ -177,7 +195,7 @@ Deno.serve(async (req) => {
         };
       }
     } else if (type === "UPDATE" && order.status === "aprovado" && oldRec?.status !== "aprovado") {
-      if (order.destino === "comprador") {
+      if (destinoRole === "comprador") {
         notifyRoles = ["comprador"];
         notification = {
           title: "✅ Pedido Aprovado",
@@ -185,7 +203,7 @@ Deno.serve(async (req) => {
           tag: `order-buy-${order.id}`,
           url: "/",
         };
-      } else if (order.destino === "chefia") {
+      } else if (destinoRole === "chefia") {
         notifyRoles = ["chefia"];
         notification = {
           title: "✅ Pedido para Chefia",

@@ -976,11 +976,16 @@ function AppInner() {
   // ── BOOT: load users + orders from Supabase ──────────────────────────────
   useEffect(()=>{
     async function boot(){
-      // Load users
-      const { data: usersData, error: usersErr } = await supabase
-        .from("users").select("*").eq("deleted", false);
-      if (usersErr) { console.error("[Supabase] boot users:", usersErr); return; }
-      if (!usersData || usersData.length === 0) {
+      // Load users and orders in parallel
+      const [
+        { data: usersData, error: usersErr },
+        { data: ordersData, error: ordersErr },
+      ] = await Promise.all([
+        supabase.from("users").select("*").eq("deleted", false),
+        supabase.from("orders").select("*").order("inserted_at", { ascending: true }),
+      ]);
+      if (usersErr) { console.error("[Supabase] boot users:", usersErr); }
+      else if (!usersData || usersData.length === 0) {
         // Seed default users on first run
         const { error: seedErr } = await supabase.from("users").upsert(DEFAULT_USERS);
         if (seedErr) console.error("[Supabase] seed users:", seedErr);
@@ -988,11 +993,8 @@ function AppInner() {
       } else {
         setUsers(usersData);
       }
-      // Load orders
-      const { data: ordersData, error: ordersErr } = await supabase
-        .from("orders").select("*").order("inserted_at", { ascending: true });
-      if (ordersErr) { console.error("[Supabase] boot orders:", ordersErr); return; }
-      setOrders(ordersData || []);
+      if (ordersErr) { console.error("[Supabase] boot orders:", ordersErr); }
+      else { setOrders(ordersData || []); }
     }
     boot();
   },[]);
