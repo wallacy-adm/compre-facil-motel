@@ -2,6 +2,19 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Perfil do Usuario
+
+O dono deste projeto **NAO tem conhecimento tecnico** em programacao. Todas as tarefas devem ser executadas de forma **100% autonoma**, sem pedir ao usuario para rodar comandos, editar arquivos ou acessar paineis. Se algo requer acesso externo (Supabase Dashboard, Lovable, etc.), o Claude deve tentar resolver por APIs, CLI ou workflows automatizados antes de pedir qualquer acao manual. Quando for inevitavel pedir algo, dar instrucoes visuais passo-a-passo extremamente simples.
+
+## Modo Hibrido de Modelos (OBRIGATORIO)
+
+Sempre usar o modelo mais adequado para cada tarefa:
+- **Opus** → tarefas complexas (arquitetura, debugging, analise de causa raiz, planejamento)
+- **Sonnet** → tarefas normais (implementacao de features, code review, refactoring)
+- **Haiku** → tarefas simples (buscas, leitura de arquivos, formatacao, perguntas rapidas)
+
+Isso e padrao do projeto para economia de tokens. **Nunca esquecer.**
+
 ## Commands
 
 ```bash
@@ -41,22 +54,24 @@ Tables managed via `supabase/migrations/`:
 - `orders` — all fields TEXT/JSONB; `status`: `pendente → aprovado → concluido`; `destino`: `chefia | comprador`
 - `push_subscriptions` — Web Push VAPID subscriptions per user
 
-**Schema changes must be applied via Lovable ☁️ Cloud SQL Editor** (not `supabase db push`), since the Supabase project is managed by Lovable. The local migrations folder is documentation only — it does NOT auto-apply.
+**Schema changes**: O ideal e aplicar via `supabase db query` pela CLI ou pelo workflow `apply-migration.yml`. Se necessario, usar o **Supabase SQL Editor** em https://supabase.com/dashboard/project/xakercaneezgyqdekmvj/sql/new. O folder `supabase/migrations/` serve como documentacao E como fonte para o CI.
 
 ### Push Notifications (dual-channel)
 1. **Web Push (VAPID)** — `supabase/functions/send-push/index.ts` sends via `web-push` npm package. Subscriptions stored in `push_subscriptions`. Works on Android Chrome. Does NOT work on iOS Safari PWA.
 2. **ntfy.sh** — `src/components/NtfySetupCard.tsx` configures the iOS channel. Generates a topic locally (`cf-{userId8}-{random5}`), saves to `users.ntfy_topic`, then opens deep link `ntfys://ntfy.sh/{topic}` so the user subscribes in the ntfy iOS app. `send-push` publishes to `https://ntfy.sh/{topic}` (public server, no auth needed).
 
-The database trigger `orders_push_notify` (in `20260401000000_fix_push_trigger_final.sql`) fires on INSERT/UPDATE of `orders` and calls `send-push` via `net.http_post()` (pg_net extension).
+The database trigger `orders_push_notify` (in `20260406000000_fix_trigger_auth_header.sql`) fires on INSERT/UPDATE of `orders` and calls `send-push` via `net.http_post()` (pg_net extension). **O trigger DEVE incluir o header `Authorization: Bearer <anon_key>`** senao o gateway do Supabase retorna 401 silenciosamente.
 
 **NtfySetupCard visibility**: shown only when `session && (isRunningStandalone() || isIOS)` — not shown on desktop or browser (non-standalone) to avoid confusion.
 
 ### Edge Functions
-Located in `supabase/functions/`. Deployed via Supabase dashboard.
-- `send-push` — receives webhook from DB trigger, sends Web Push + ntfy notifications
-- `generate-ntfy-token` — legacy; generates ntfy token via admin API (not actively used; frontend now generates topics directly)
+Located in `supabase/functions/`. Deployed via GitHub Actions workflow (`deploy.yml`) on push to `main`.
+- `send-push` — receives webhook from DB trigger, sends Web Push + ntfy notifications. Skips Web Push when VAPID keys are not configured (logs warning instead of failing silently).
+- `generate-ntfy-token` — legacy; not actively used.
 
 Env vars needed in Supabase secrets: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_EMAIL`, `SUPABASE_SERVICE_ROLE_KEY`, `WEBHOOK_SECRET`. `NTFY_BASE_URL` defaults to `https://ntfy.sh`, `NTFY_PUBLISHER_TOKEN` is optional.
+
+**IMPORTANTE**: Nunca usar fallbacks hardcoded para chaves VAPID. Se as env vars nao estiverem configuradas, a funcao deve logar erro e pular o canal Web Push.
 
 ### Realtime
 `supabase_realtime` publication includes `orders` table. The frontend subscribes via `supabase.channel(...)` to receive live order updates without polling.
@@ -67,5 +82,41 @@ This project is connected to [Lovable](https://lovable.dev/projects/1922eec0-a90
 ### iOS PWA Notes
 - `ntfys://` deep link scheme = ntfy over HTTPS (use `ntfys://`, NOT `ntfy://`)
 - `navigator.standalone === true` detects iOS standalone mode
-- `apple-touch-icon.png` is used as the home screen icon (must be a real PNG, not a placeholder)
+- `apple-touch-icon.png` is used as the home screen icon (Carpe Diem Motel branding, 180x180)
 - Web Push does not work in iOS Safari — ntfy is the only reliable notification channel for iOS
+
+## GitHub Actions
+
+### Workflows
+- `deploy.yml` — Deploys Edge Functions via `supabase functions deploy` on push to `supabase/functions/**`
+- `apply-migration.yml` — Aplica migracoes SQL via `supabase db query` on push to `supabase/migrations/**` ou manual dispatch
+
+### Required GitHub Secrets
+- `SUPABASE_PROJECT_REF` — Project ID (`xakercaneezgyqdekmvj`)
+- `SUPABASE_ACCESS_TOKEN` — Token pessoal do Supabase (gerar em https://supabase.com/dashboard/account/tokens)
+
+**STATUS**: Estes secrets precisam ser configurados para os workflows funcionarem. Sem eles, tanto o deploy de Edge Functions quanto a aplicacao de migracoes falham.
+
+## Supabase Connection Info
+- **Project ID**: `xakercaneezgyqdekmvj`
+- **URL**: `https://xakercaneezgyqdekmvj.supabase.co`
+- **Anon Key**: disponivel em `.env` (`VITE_SUPABASE_PUBLISHABLE_KEY`)
+- **Dashboard**: https://supabase.com/dashboard/project/xakercaneezgyqdekmvj
+
+## Problemas Conhecidos e Licoes Aprendidas
+
+1. **Trigger sem Authorization header** — O gateway do Supabase (Kong) exige JWT no header Authorization para chamar Edge Functions. Triggers que usam `net.http_post()` DEVEM incluir `Authorization: Bearer <anon_key>`. Sem isso, retorna 401 silencioso e o `EXCEPTION WHEN OTHERS` engole o erro.
+
+2. **GitHub push 403** — O Claude Code web/desktop precisa do GitHub App "Claude" instalado com permissao de escrita. Instalar em https://github.com/apps/claude.
+
+3. **DNS bloqueado para psql** — O servidor do Claude Code nao resolve `db.*.supabase.co` (porta 5432). Conexoes diretas PostgreSQL nao funcionam. Usar a REST API ou o CLI via GitHub Actions.
+
+4. **Chaves VAPID** — NUNCA hardcodar fallbacks. Devem vir exclusivamente de Supabase Secrets.
+
+## Comunicacao
+
+- Falar em **portugues** com o usuario
+- Ser **direto e autonomo** — fazer, nao perguntar
+- Quando precisar do usuario, dar instrucoes **visuais e simples** (link + "clica aqui" + "cola isso")
+- Usar agentes especializados para tarefas paralelas
+- Seguir o modo hibrido de modelos (Opus/Sonnet/Haiku) para economia de tokens
