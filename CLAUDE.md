@@ -48,13 +48,15 @@ The entire application lives in `src/App.tsx` (~2000+ lines, `// @ts-nocheck`). 
 
 `src/pages/Index.tsx` just re-exports from `App.tsx`. `src/components/NavLink.tsx` is the only extracted UI component besides `NtfySetupCard.tsx`.
 
-### Database (Supabase PostgreSQL)
+### Database (Supabase PostgreSQL via Lovable Cloud)
+**IMPORTANTE**: O banco de dados e gerenciado **exclusivamente pelo Lovable Cloud**, NAO pelo Supabase Dashboard. O usuario NAO tem acesso ao Supabase Dashboard e NUNCA deve ser direcionado para la. Toda interacao com o banco deve ser feita pelo Lovable.
+
 Tables managed via `supabase/migrations/`:
 - `users` — custom auth, roles (JSONB), ntfy_topic (TEXT), ntfy_token (TEXT)
 - `orders` — all fields TEXT/JSONB; `status`: `pendente → aprovado → concluido`; `destino`: `chefia | comprador`
 - `push_subscriptions` — Web Push VAPID subscriptions per user
 
-**Schema changes**: O ideal e aplicar via `supabase db query` pela CLI ou pelo workflow `apply-migration.yml`. Se necessario, usar o **Supabase SQL Editor** em https://supabase.com/dashboard/project/xakercaneezgyqdekmvj/sql/new. O folder `supabase/migrations/` serve como documentacao E como fonte para o CI.
+**Schema changes**: Aplicar via **Lovable Cloud SQL Editor** em https://lovable.dev/projects/1922eec0-a903-4396-bae6-888408f5ec7a (aba Supabase > SQL Editor). O folder `supabase/migrations/` serve como documentacao e fonte para referencia. **NUNCA pedir ao usuario para acessar o Supabase Dashboard** — ele usa apenas o Lovable.
 
 ### Push Notifications (dual-channel)
 1. **Web Push (VAPID)** — `supabase/functions/send-push/index.ts` sends via `web-push` npm package. Subscriptions stored in `push_subscriptions`. Works on Android Chrome. Does NOT work on iOS Safari PWA.
@@ -65,7 +67,7 @@ The database trigger `orders_push_notify` (in `20260406000000_fix_trigger_auth_h
 **NtfySetupCard visibility**: shown only when `session && (isRunningStandalone() || isIOS)` — not shown on desktop or browser (non-standalone) to avoid confusion.
 
 ### Edge Functions
-Located in `supabase/functions/`. Deployed via GitHub Actions workflow (`deploy.yml`) on push to `main`.
+Located in `supabase/functions/`. Deployed automaticamente pelo **Lovable** on push to `main`. O workflow `deploy.yml` do GitHub Actions e um fallback, mas o Lovable e o mecanismo principal de deploy.
 - `send-push` — receives webhook from DB trigger, sends Web Push + ntfy notifications. Skips Web Push when VAPID keys are not configured (logs warning instead of failing silently).
 - `generate-ntfy-token` — legacy; not actively used.
 
@@ -97,11 +99,12 @@ This project is connected to [Lovable](https://lovable.dev/projects/1922eec0-a90
 
 **STATUS**: Estes secrets precisam ser configurados para os workflows funcionarem. Sem eles, tanto o deploy de Edge Functions quanto a aplicacao de migracoes falham.
 
-## Supabase Connection Info
+## Supabase Connection Info (via Lovable Cloud)
 - **Project ID**: `xakercaneezgyqdekmvj`
 - **URL**: `https://xakercaneezgyqdekmvj.supabase.co`
 - **Anon Key**: disponivel em `.env` (`VITE_SUPABASE_PUBLISHABLE_KEY`)
-- **Dashboard**: https://supabase.com/dashboard/project/xakercaneezgyqdekmvj
+- **Lovable Project**: https://lovable.dev/projects/1922eec0-a903-4396-bae6-888408f5ec7a
+- **NUNCA** direcionar o usuario ao Supabase Dashboard — ele usa **somente o Lovable Cloud**
 
 ## Problemas Conhecidos e Licoes Aprendidas
 
