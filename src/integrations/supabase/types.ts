@@ -92,6 +92,7 @@ export type Database = {
           deleted: boolean
           id: string
           name: string
+          ntfy_topic: string | null
           password: string
           role: string
           roles: Json
@@ -102,6 +103,7 @@ export type Database = {
           deleted?: boolean
           id: string
           name: string
+          ntfy_topic?: string | null
           password: string
           role?: string
           roles?: Json
@@ -112,6 +114,7 @@ export type Database = {
           deleted?: boolean
           id?: string
           name?: string
+          ntfy_topic?: string | null
           password?: string
           role?: string
           roles?: Json
