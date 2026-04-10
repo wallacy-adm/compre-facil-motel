@@ -16,10 +16,24 @@ jobs:
         with:
           version: latest
 
-      - name: Verify Supabase auth
+      - name: Verify token via Management API
         run: |
-          echo "Token prefix: ${SUPABASE_ACCESS_TOKEN:0:8}..."
-          supabase projects list 2>&1 || echo "projects list failed"
+          echo "=== Token prefix: ${SUPABASE_ACCESS_TOKEN:0:10}... ==="
+          echo "=== Calling Management API ==="
+          curl -sf "https://api.supabase.com/v1/projects" \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            -H "Accept: application/json" | python3 -c "import sys,json; p=json.load(sys.stdin); print(f'Projects found: {len(p)}'); [print(f'  - {x[\"id\"]}') for x in p]" \
+            && echo "AUTH OK" || echo "AUTH FAILED - token invalido ou sem permissao"
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Try deploy via Management API directly
+        run: |
+          echo "=== Testing function deploy endpoint ==="
+          RESP=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X GET \
+            "https://api.supabase.com/v1/projects/xakercaneezgyqdekmvj/functions" \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}")
+          echo "$RESP"
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 

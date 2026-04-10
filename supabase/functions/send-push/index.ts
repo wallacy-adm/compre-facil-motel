@@ -1,4 +1,4 @@
-// v2.4 — destino ID→role resolution + canal1/canal2 response
+// v2.5 — destino ID→role resolution + canal1/canal2 response
 import webpush from "npm:web-push@3.6.7";
 
 const VAPID_PUBLIC_KEY = Deno.env.get("VAPID_PUBLIC_KEY") ?? "";
