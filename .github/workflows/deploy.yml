@@ -34,7 +34,6 @@ jobs:
         run: |
           supabase functions deploy send-push \
             --project-ref xakercaneezgyqdekmvj \
-            --use-api \
             2>&1 | tee /tmp/deploy_out.txt
           STATUS=${PIPESTATUS[0]}
           if [ $STATUS -ne 0 ]; then
