@@ -1017,7 +1017,7 @@ function AppInner() {
           const o = payload.new;
           const shouldAlert =
             ((isAdmin(me)||isChefia(me)) && o.status==="pendente") ||
-            (isComprador(me) && o.status==="pendente" && o.destino==="comprador");
+            (isComprador(me) && o.status==="pendente" && (o.destino===String(me.id) || o.destino==="comprador"));
           if (shouldAlert) {
             playAlertSound();
             navigator.vibrate?.([300,100,300,100,300]);
@@ -1031,7 +1031,7 @@ function AppInner() {
           const me = u.find(v=>v.id===s.id)||s;
           const o = payload.new; const old = payload.old;
           if (o.status==="aprovado" && old?.status !== "aprovado") {
-            if (isComprador(me) && o.destino==="comprador") {
+            if (isComprador(me) && (o.destino===String(me.id) || o.destino==="comprador")) {
               playAlertSound();
               navigator.vibrate?.([300,100,300,100,300]);
               showToastRef.current("✅ Pedido aprovado — pronto para compra", "success");
