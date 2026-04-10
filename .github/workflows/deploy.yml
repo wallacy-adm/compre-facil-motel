@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "supabase/functions/**"
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -16,28 +17,31 @@ jobs:
         with:
           version: latest
 
-      - name: Verify token via Management API
+      - name: Check token type
         run: |
-          echo "=== Token prefix: ${SUPABASE_ACCESS_TOKEN:0:10}... ==="
-          echo "=== Calling Management API ==="
-          curl -sf "https://api.supabase.com/v1/projects" \
-            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
-            -H "Accept: application/json" | python3 -c "import sys,json; p=json.load(sys.stdin); print(f'Projects found: {len(p)}'); [print(f'  - {x[\"id\"]}') for x in p]" \
-            && echo "AUTH OK" || echo "AUTH FAILED - token invalido ou sem permissao"
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-
-      - name: Try deploy via Management API directly
-        run: |
-          echo "=== Testing function deploy endpoint ==="
-          RESP=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X GET \
-            "https://api.supabase.com/v1/projects/xakercaneezgyqdekmvj/functions" \
-            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}")
-          echo "$RESP"
+          PREFIX="${SUPABASE_ACCESS_TOKEN:0:4}"
+          echo "Token prefix: ${SUPABASE_ACCESS_TOKEN:0:10}..."
+          if [ "$PREFIX" != "sbp_" ]; then
+            echo "::error::SUPABASE_ACCESS_TOKEN invalido! Deve comecar com 'sbp_'."
+            echo "::error::Va em https://supabase.com/dashboard/account/tokens e gere um NOVO token pessoal."
+            exit 1
+          fi
+          echo "Token format OK (sbp_*)"
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
       - name: Deploy send-push function
-        run: supabase functions deploy send-push --project-ref xakercaneezgyqdekmvj --use-api
+        run: |
+          supabase functions deploy send-push \
+            --project-ref xakercaneezgyqdekmvj \
+            --use-api \
+            2>&1 | tee /tmp/deploy_out.txt
+          STATUS=${PIPESTATUS[0]}
+          if [ $STATUS -ne 0 ]; then
+            echo "::error::Deploy falhou. Output:"
+            cat /tmp/deploy_out.txt
+            exit $STATUS
+          fi
+          echo "Deploy concluido com sucesso!"
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
