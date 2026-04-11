@@ -31,28 +31,27 @@ jobs:
 
       - name: Deploy send-push function
         run: |
-          echo "=== Tentando deploy com --use-api ==="
-          if supabase functions deploy send-push \
+          # Capture output and exit code correctly (without pipe to avoid tee masking errors)
+          OUTPUT=$(supabase functions deploy send-push \
             --project-ref xakercaneezgyqdekmvj \
-            --use-api 2>&1 | tee /tmp/deploy_out.txt; then
-            echo "Deploy via --use-api SUCESSO!"
+            --use-api 2>&1)
+          EXIT=$?
+          echo "$OUTPUT"
+          if [ $EXIT -eq 0 ]; then
+            echo "=== Deploy --use-api SUCESSO! ==="
           else
-            echo "::warning::--use-api falhou, tentando sem Docker..."
-            echo "=== Tentando deploy sem --use-api ==="
-            supabase functions deploy send-push \
-              --project-ref xakercaneezgyqdekmvj 2>&1 | tee -a /tmp/deploy_out.txt
+            echo "=== --use-api falhou (exit $EXIT), tentando sem --use-api ==="
+            OUTPUT2=$(supabase functions deploy send-push \
+              --project-ref xakercaneezgyqdekmvj 2>&1)
+            EXIT2=$?
+            echo "$OUTPUT2"
+            if [ $EXIT2 -ne 0 ]; then
+              echo "::error::Ambos os metodos de deploy falharam!"
+              echo "Erro --use-api: $OUTPUT"
+              echo "Erro sem --use-api: $OUTPUT2"
+              exit 1
+            fi
+            echo "=== Deploy sem --use-api SUCESSO! ==="
           fi
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-
-      - name: Show deploy output
-        if: always()
-        run: cat /tmp/deploy_out.txt 2>/dev/null || echo "sem output"
-
-      - name: Upload deploy log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: deploy-log
-          path: /tmp/deploy_out.txt
-          if-no-files-found: ignore
