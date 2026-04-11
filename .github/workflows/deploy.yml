@@ -20,12 +20,18 @@ jobs:
       - name: Check token type
         run: |
           PREFIX="${SUPABASE_ACCESS_TOKEN:0:4}"
+          LEN=${#SUPABASE_ACCESS_TOKEN}
           echo "Token prefix: ${SUPABASE_ACCESS_TOKEN:0:10}..."
+          echo "Token length: $LEN caracteres"
           if [ "$PREFIX" != "sbp_" ]; then
-            echo "::error::SUPABASE_ACCESS_TOKEN invalido! Deve comecar com 'sbp_'."
+            echo "::error::SUPABASE_ACCESS_TOKEN invalido! Deve comecar com 'sbp_'. Prefixo atual: $PREFIX"
             exit 1
           fi
-          echo "Token format OK (sbp_*)"
+          if [ $LEN -lt 40 ]; then
+            echo "::error::Token muito curto ($LEN chars). PAT valido deve ter 40+ chars. Formato: sbp_0102...1920"
+            exit 1
+          fi
+          echo "Token OK: prefixo sbp_, comprimento $LEN"
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
