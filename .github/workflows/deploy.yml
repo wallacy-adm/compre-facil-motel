@@ -17,81 +17,39 @@ jobs:
         with:
           version: latest
 
-      - name: Validate and test token
-        run: |
-          # Remove whitespace/newlines (common copy-paste issue)
-          CLEAN_TOKEN=$(printf '%s' "$SUPABASE_ACCESS_TOKEN" | tr -d '[:space:]')
-          LEN=${#CLEAN_TOKEN}
-          PREFIX="${CLEAN_TOKEN:0:4}"
-          BODY="${CLEAN_TOKEN:4}"
-
-          echo "Token: ${CLEAN_TOKEN:0:8}... (${LEN} chars)"
-
-          if [ "$PREFIX" != "sbp_" ]; then
-            echo "::error::Token invalido! Prefixo '${PREFIX}' deve ser 'sbp_'. Gere novo em: https://supabase.com/dashboard/account/tokens"
-            exit 1
-          fi
-          if [ $LEN -lt 44 ]; then
-            echo "::error::Token muito curto (${LEN} chars apos trim). PAT valido tem 68 chars (sbp_ + 64 hex). Gere novo em: https://supabase.com/dashboard/account/tokens"
-            exit 1
-          fi
-          if ! echo "$BODY" | grep -qE '^[0-9a-f]+$'; then
-            echo "::error::Token com chars invalidos apos sbp_ (deve ser apenas [0-9a-f]). Gere novo em: https://supabase.com/dashboard/account/tokens"
-            exit 1
-          fi
-          echo "Formato OK. Testando autenticacao na API Supabase..."
-
-          # Test auth against Supabase Management API
-          HTTP_CODE=$(curl -s -o /tmp/auth_resp.txt -w "%{http_code}" \
-            -H "Authorization: Bearer $CLEAN_TOKEN" \
-            "https://api.supabase.com/v1/projects")
-          BODY_RESP=$(cat /tmp/auth_resp.txt | head -c 300)
-
-          echo "Auth HTTP: $HTTP_CODE"
-          echo "Auth response: $BODY_RESP"
-
-          {
-            echo "## Token Validation"
-            echo "- Length: $LEN"
-            echo "- Auth HTTP: $HTTP_CODE"
-            echo '```json'
-            echo "$BODY_RESP"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "::error::Token rejeitado pela API Supabase (HTTP $HTTP_CODE). Token expirado ou invalido. Gere novo em: https://supabase.com/dashboard/account/tokens — depois atualize o secret SUPABASE_ACCESS_TOKEN em Settings > Secrets > Actions"
-            exit 1
-          fi
-
-          echo "Token autentico e valido!"
-          # Export cleaned token for deploy step
-          echo "SUPABASE_ACCESS_TOKEN_CLEAN=$CLEAN_TOKEN" >> "$GITHUB_ENV"
+      - name: Deploy send-push function
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-
-      - name: Deploy send-push function
         run: |
-          OUTPUT=$(SUPABASE_ACCESS_TOKEN="$SUPABASE_ACCESS_TOKEN_CLEAN" \
+          # Trim whitespace/newlines (common copy-paste issue)
+          CLEAN_TOKEN=$(printf '%s' "$SUPABASE_ACCESS_TOKEN" | tr -d '[:space:]')
+
+          echo "Token length: ${#CLEAN_TOKEN}"
+          echo "Token prefix: ${CLEAN_TOKEN:0:4}"
+
+          # set +e: evita que bash -e aborte antes de capturar exit code
+          set +e
+          OUTPUT=$(SUPABASE_ACCESS_TOKEN="$CLEAN_TOKEN" \
             supabase functions deploy send-push \
-              --project-ref xakercaneezgyqdekmvj \
-              --use-api 2>&1)
+            --project-ref xakercaneezgyqdekmvj \
+            --use-api 2>&1)
           EXIT=$?
+          set -e
+
+          echo "$OUTPUT"
 
           {
             echo "## Deploy send-push"
-            echo "**Exit code**: \`$EXIT\`"
+            echo "**Exit code:** `$EXIT`"
             echo ""
-            echo '```'
+            echo "```"
             echo "$OUTPUT"
-            echo '```'
+            echo "```"
           } >> "$GITHUB_STEP_SUMMARY"
-
-          echo "$OUTPUT"
 
           if [ $EXIT -eq 0 ]; then
             echo "=== Deploy SUCESSO! ==="
           else
-            echo "::error::Deploy falhou (exit $EXIT): $OUTPUT"
+            echo "::error::Deploy falhou (exit $EXIT). Veja output acima."
             exit 1
           fi
