@@ -1,43 +1,69 @@
-name: Deploy Edge Functions
+name: Validate Edge Functions
+
+# IMPORTANTE: Este projeto roda no Lovable (backend gerenciado).
+# O Supabase do projeto pertence à org da Lovable — deploy via CLI externo
+# resulta em 403. O deploy das Edge Functions é gerenciado PELA LOVABLE.
+# Este workflow valida os arquivos e registra o status; não faz deploy direto.
+
 on:
   push:
     branches: [main]
     paths:
       - "supabase/functions/**"
   workflow_dispatch:
+
 jobs:
-  deploy:
+  validate:
+    name: Validate & Document
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: supabase/setup-cli@v1
-        with:
-          version: latest
-      - name: Deploy send-push function
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Validate function files
         run: |
-          CLEAN_TOKEN=$(printf '%s' "$SUPABASE_ACCESS_TOKEN" | tr -d '[:space:]')
-          echo "Token length: ${#CLEAN_TOKEN}"
-          echo "Token prefix: ${CLEAN_TOKEN:0:4}"
-          set +e
-          OUTPUT=$(SUPABASE_ACCESS_TOKEN="$CLEAN_TOKEN" \
-            supabase functions deploy send-push \
-            --project-ref xakercaneezgyqdekmvj 2>&1)
-          EXIT=$?
-          set -e
-          echo "$OUTPUT"
           {
-            echo "## Deploy send-push"
-            echo "**Exit code:** ${EXIT}"
+            echo "## Edge Functions — Validação"
             echo ""
-            echo '```'
-            echo "$OUTPUT"
-            echo '```'
+            echo "| Função | Status | Tamanho |"
+            echo "|--------|--------|---------|"
           } >> "$GITHUB_STEP_SUMMARY"
-          if [ $EXIT -eq 0 ]; then
-            echo "=== Deploy SUCESSO! ==="
-          else
-            echo "::error::Deploy falhou (exit $EXIT). Veja output acima."
+
+          FUNCTIONS_DIR="supabase/functions"
+          FAILED=0
+
+          if [ ! -d "$FUNCTIONS_DIR" ]; then
+            echo "❌ Diretório $FUNCTIONS_DIR não encontrado" >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
+
+          for fn in "$FUNCTIONS_DIR"/*/; do
+            [ -d "$fn" ] || continue
+            fn_name=$(basename "$fn")
+            if [ -f "$fn/index.ts" ]; then
+              size=$(wc -c < "$fn/index.ts")
+              echo "| \`$fn_name\` | ✅ OK | ${size} bytes |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "| \`$fn_name\` | ⚠️ sem index.ts | — |" >> "$GITHUB_STEP_SUMMARY"
+              FAILED=1
+            fi
+          done
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ $FAILED -ne 0 ]; then
+            echo "::error::Uma ou mais funções estão sem index.ts."
+            exit 1
+          fi
+
+      - name: Deploy notice
+        run: |
+          {
+            echo "---"
+            echo "### 🚀 Deploy"
+            echo ""
+            echo "> **Este projeto usa Lovable como plataforma gerenciada.**"
+            echo "> O deploy das Edge Functions é realizado pela Lovable internamente."
+            echo "> Para deploy manual: use o chat da Lovable e solicite o deploy."
+            echo ""
+            echo "✅ Validação concluída com sucesso."
+          } >> "$GITHUB_STEP_SUMMARY"
