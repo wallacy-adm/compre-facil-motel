@@ -1,9 +1,8 @@
-// v4.0 — badge via IndexedDB (contador preciso, independente de notificações abertas)
+// v5.0 — badge: SW é fonte única de verdade (notificationclose + RESET_BADGE)
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(clients.claim()));
 
-// ── BADGE COUNTER via IndexedDB ────────────────────────────────────────
-// Mantém contador persistente no SW — não depende de getNotifications()
+// ── BADGE COUNTER via IndexedDB ──────────────────────────────────────────
 function openBadgeDB() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open('cf_badge_db', 1);
@@ -49,16 +48,16 @@ async function updateBadge(delta) {
   return next;
 }
 
-// ── PUSH ───────────────────────────────────────────────────────────────────
+// ── PUSH ─────────────────────────────────────────────────────────────────
 self.addEventListener('push', event => {
   if (!event.data) return;
   let data;
-  try { data = event.data.json(); } catch { data = { title: 'CompraFácil', body: event.data.text() }; }
+  try { data = event.data.json(); } catch { data = { title: 'CompraF\u00e1cil', body: event.data.text() }; }
   const url = data.url || '/';
 
   event.waitUntil(
     updateBadge(+1).then(() =>
-      self.registration.showNotification(data.title || 'CompraFácil', {
+      self.registration.showNotification(data.title || 'CompraF\u00e1cil', {
         body: data.body || '',
         icon: '/icon-192x192.png',
         badge: '/icon-192x192.png',
@@ -70,7 +69,7 @@ self.addEventListener('push', event => {
   );
 });
 
-// ── NOTIFICATION CLICK ────────────────────────────────────────────────────────────
+// ── NOTIFICATION CLICK ───────────────────────────────────────────────────
 self.addEventListener('notificationclick', event => {
   event.notification.close();
   const url = event.notification.data?.url || '/';
@@ -88,4 +87,22 @@ self.addEventListener('notificationclick', event => {
       })
     )
   );
+});
+
+// ── NOTIFICATION CLOSE (swipe/dismiss sem clicar) ────────────────────────
+self.addEventListener('notificationclose', event => {
+  event.waitUntil(updateBadge(-1));
+});
+
+// ── RESET BADGE (app aberto pelo usuário) ────────────────────────────────
+self.addEventListener('message', event => {
+  if (event.data?.type === 'RESET_BADGE') {
+    event.waitUntil(
+      saveBadgeCount(0).then(async () => {
+        try {
+          if ('clearAppBadge' in self.navigator) await self.navigator.clearAppBadge();
+        } catch {}
+      })
+    );
+  }
 });
