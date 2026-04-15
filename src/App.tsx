@@ -1097,10 +1097,9 @@ function AppInner() {
   const pendingBuy = useMemo(()=>orders.filter(o=>o.status==="aprovado"&&(o.destino===session?.id||o.destino==="comprador")&&(o.items||[]).some(i=>!i.done&&i.itemStatus!=="recusado")).length,[orders,session]);
   const pendingChefia   = useMemo(()=>orders.filter(o=>o.status==="aprovado"&&o.destino==="chefia"&&(o.items||[]).some(i=>!i.done&&i.itemStatus!=="recusado")).length,[orders]);
 
-  // ── APP BADGE API + fallback de título na aba ────────────────────────────
+  // ── Título da aba (badge do ícone gerenciado EXCLUSIVAMENTE pelo SW) ──────
   useEffect(()=>{
     if(!session){
-      if ("setAppBadge" in navigator) navigator.clearAppBadge?.().catch?.(()=>{});
       if (typeof document !== "undefined") document.title = originalTitleRef.current;
       return;
     }
@@ -1109,16 +1108,25 @@ function AppInner() {
     if(isAdmin(u))          count = pendingApproval;
     else if(isChefia(u))    count = pendingApproval + pendingChefia;
     else if(isComprador(u)) count = pendingBuy;
-    if ("setAppBadge" in navigator) {
-      if(count > 0) navigator.setAppBadge(count).catch(()=>{});
-      else navigator.clearAppBadge?.().catch?.(()=>{});
-    }
     if (typeof document !== "undefined") {
       document.title = count > 0
         ? `(${count}) ${originalTitleRef.current}`
         : originalTitleRef.current;
     }
   },[session, users, pendingApproval, pendingBuy, pendingChefia]);
+
+  // ── Reseta badge do ícone quando o usuário abre/foca o app ──────────────
+  useEffect(()=>{
+    const resetBadge = () => {
+      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({ type: 'RESET_BADGE' });
+      }
+    };
+    resetBadge();
+    const onVisible = () => { if(document.visibilityState==='visible') resetBadge(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return ()=>{ document.removeEventListener('visibilitychange', onVisible); };
+  },[]);
 
   if (!session) return <LoginScreen users={users} onLogin={setSession} showToast={showToast} toast={toast}/>;
 
