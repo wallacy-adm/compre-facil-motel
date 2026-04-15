@@ -1124,9 +1124,11 @@ function AppInner() {
 
   const user = users.find(u=>u.id===session.id)||session;
   const props = { user, users, setUsers:dbSetUsers, orders, setOrders:dbSetOrders, onLogout:logout, showToast, toast, lightbox, setLightbox };
+  // Não mostrar permissão de notif enquanto o banner de instalação Android estiver visível
   const showNotifBanner = notifStatus === 'default'
     && 'PushManager' in window
-    && (!isIOS || isRunningStandalone());
+    && (!isIOS || isRunningStandalone())
+    && !showAndroidInstall;
 
   let screen;
   if (isAdmin(user))         screen = <AdminScreen    {...props} pendingApproval={pendingApproval}/>;
@@ -1144,7 +1146,8 @@ function AppInner() {
           onDismiss={() => setShowAndroidInstall(false)}
         />
       )}
-      {session && (isRunningStandalone() || isIOS) && (
+      {/* ntfy: apenas iOS em standalone E somente se Web Push não estiver ativo */}
+      {session && isIOS && isRunningStandalone() && notifStatus !== 'granted' && (
         <NtfySetupCard
           userId={session.id}
           currentNtfyTopic={userNtfyTopic}
