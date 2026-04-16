@@ -1115,30 +1115,46 @@ function AppInner() {
     }
   },[session, users, pendingApproval, pendingBuy, pendingChefia]);
 
-  // ── Reseta badge do ícone quando o usuário abre/foca o app ──────────────
+  // ── Sincroniza badge do ícone com pedidos pendentes reais (comportamento WhatsApp) ──
+  // SET_BADGE define a contagem exata; RESET_BADGE só no logout.
+  // O SW incrementa/decrementa via push/notificationclose — este effect corrige
+  // a contagem toda vez que a lista de pedidos muda (Realtime, aprovação, etc.)
   useEffect(()=>{
-    const resetBadge = () => {
-      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-        navigator.serviceWorker.controller.postMessage({ type: 'RESET_BADGE' });
-      }
-    };
-    resetBadge();
-    const onVisible = () => { if(document.visibilityState==='visible') resetBadge(); };
-    document.addEventListener('visibilitychange', onVisible);
-    return ()=>{ document.removeEventListener('visibilitychange', onVisible); };
-  },[]);
+    const sw = () => ('serviceWorker' in navigator && navigator.serviceWorker.controller)
+      ? navigator.serviceWorker.controller : null;
+    if (!session) {
+      sw()?.postMessage({ type: 'RESET_BADGE' });
+      return;
+    }
+    const u = users.find(v=>v.id===session.id)||session;
+    let count = 0;
+    if(isAdmin(u))          count = pendingApproval;
+    else if(isChefia(u))    count = pendingApproval + pendingChefia;
+    else if(isComprador(u)) count = pendingBuy;
+    sw()?.postMessage({ type: 'SET_BADGE', count });
+  },[session, users, pendingApproval, pendingBuy, pendingChefia]);
 
-  // ── Re-fetch pedidos ao voltar ao foco + polling (fallback para realtime) ──
+  // ── Re-fetch ao voltar ao foco (merge inteligente: nunca rebaixa status) ──
+  // SEM polling — Supabase Realtime cuida das atualizações em tempo real.
+  // O visibilitychange garante dados frescos ao reabrir o app.
   useEffect(()=>{
     if (!session) return;
     const refetch = async () => {
       const { data } = await supabase.from("orders").select("*").order("inserted_at", { ascending: true });
-      if (data) setOrders(data);
+      if (!data) return;
+      const rank = { pendente:0, aprovado:1, concluido:2, recusado:2 };
+      setOrders(prev => {
+        const loc = new Map(prev.map(o=>[o.id,o]));
+        return data.map(srv => {
+          const l = loc.get(srv.id);
+          if (!l) return srv;
+          return (rank[l.status]??0) > (rank[srv.status]??0) ? l : srv;
+        });
+      });
     };
-    const onVisible = () => { if(document.visibilityState==='visible') refetch(); };
+    const onVisible = ()=>{ if(document.visibilityState==='visible') refetch(); };
     document.addEventListener('visibilitychange', onVisible);
-    const timer = setInterval(refetch, 15000);
-    return ()=>{ document.removeEventListener('visibilitychange', onVisible); clearInterval(timer); };
+    return ()=>{ document.removeEventListener('visibilitychange', onVisible); };
   },[session]);
 
   if (!session) return <LoginScreen users={users} onLogin={setSession} showToast={showToast} toast={toast}/>;
@@ -1434,6 +1450,7 @@ function ChefiaScreen({ user, users, orders, setOrders, onLogout, showToast, toa
 
   const [openOrder, setOpenOrder] = useState(null);
   const togglingRef               = useRef(new Set());
+  const justApprovedRef           = useRef(false);
 
   const recusadosCount = useMemo(()=>{
     let count=0;
@@ -1458,8 +1475,8 @@ function ChefiaScreen({ user, users, orders, setOrders, onLogout, showToast, toa
   const handleApprove = useCallback((orderId, updatedItems, newStatus) => {
     setOrders(p=>p.map(o=>o.id===orderId?{...o,status:newStatus,items:updatedItems}:o));
     if (newStatus==="aprovado") {
-      showToast("Pedido aprovado! ✅");
-      // Só navega para compras quando não houver mais nenhum pedido pendente
+      showToast("Pedido aprovado! \u2705");
+      justApprovedRef.current = true;
       const remaining = orders.filter(o => o.id !== orderId && o.status === "pendente").length;
       if (remaining === 0) setTimeout(()=>setTab("compras"), 400);
     } else {
@@ -1467,6 +1484,15 @@ function ChefiaScreen({ user, users, orders, setOrders, onLogout, showToast, toa
       setTimeout(()=>setTab("recusados"), 400);
     }
   },[setOrders,showToast]);
+
+  // Backup: useEffect reage ao pendingApproval (estado real apos render)
+  // Garante navegacao para compras quando todos os pedidos sao aprovados
+  useEffect(()=>{
+    if (justApprovedRef.current && pendingApproval === 0) {
+      justApprovedRef.current = false;
+      setTimeout(()=>setTab("compras"), 400);
+    }
+  },[pendingApproval]);
 
   const handleReject = useCallback((orderId) => {
     setOrders(p=>p.map(o=>o.id===orderId?{...o,status:"recusado"}:o));
