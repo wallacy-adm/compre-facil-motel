@@ -1,4 +1,4 @@
-// v3.4 — destino ID→role resolution + canal1/canal2 response
+// v3.6 — INSERT+pendente SEMPRE notifica admin+chefia (fix: destino=comprador não notificava aprovadores)
 import webpush from "npm:web-push@3.6.7";
 
 const VAPID_PUBLIC_KEY = Deno.env.get("VAPID_PUBLIC_KEY") ?? "";
@@ -98,22 +98,27 @@ async function sendNtfyNotification(
   const sanitizedTopic = topic.trim();
   if (!sanitizedTopic) throw new Error("topic vazio para ntfy");
 
+  const payload: Record<string, unknown> = {
+    topic: sanitizedTopic,
+    title,
+    message: body,
+    priority: 4,
+    tags: ["bell"],
+    click: clickUrl,
+  };
+
   const headers: Record<string, string> = {
-    Title: title,
-    Priority: "high",
-    Tags: "bell",
-    Click: clickUrl,
-    "Content-Type": "text/plain",
+    "Content-Type": "application/json",
   };
 
   if (NTFY_PUBLISHER_TOKEN) {
     headers.Authorization = `Bearer ${NTFY_PUBLISHER_TOKEN}`;
   }
 
-  const res = await fetch(`${NTFY_BASE_URL}/${sanitizedTopic}`, {
+  const res = await fetch(`${NTFY_BASE_URL}`, {
     method: "POST",
     headers,
-    body,
+    body: JSON.stringify(payload),
   });
 
   if (!res.ok) {
@@ -155,11 +160,10 @@ Deno.serve(async (req) => {
 
     console.log(`[send-push] Evento recebido: type=${type} order.id=${order.id} status=${order.status} destino=${order.destino}`);
 
-    // Resolve destino: pode ser role string ("comprador","chefia") ou user ID ("2")
+    // Resolve destino: pode ser role string ("comprador","chefia") ou user ID
     const knownRoles = ["comprador", "chefia", "admin", "estoque", "construcao", "manutencao"];
     let destinoRole = order.destino as string;
     if (!knownRoles.includes(destinoRole)) {
-      // destino é um user ID — buscar role do usuario
       const allUsers = await dbGet("users?select=id,role,roles&deleted=eq.false");
       const targetUser = (Array.isArray(allUsers) ? allUsers : []).find(
         (u: Record<string, unknown>) => String(u.id) === String(order.destino)
@@ -177,24 +181,16 @@ Deno.serve(async (req) => {
     let notification: { title: string; body: string; tag: string; url: string } | null = null;
 
     if (type === "INSERT" && order.status === "pendente") {
-      const setor = (order.sectorLabel || order.sector_label || "setor") as string;
-      if (destinoRole === "comprador") {
-        notifyRoles = ["comprador"];
-        notification = {
-          title: "🛒 Pedido para Compra",
-          body: `Pedido de ${setor} direto para compra`,
-          tag: `order-buy-${order.id}`,
-          url: "/",
-        };
-      } else {
-        notifyRoles = ["admin", "chefia"];
-        notification = {
-          title: "📋 Novo Pedido",
-          body: `Pedido de ${setor} aguardando aprovação`,
-          tag: `order-new-${order.id}`,
-          url: "/",
-        };
-      }
+      // REGRA: todo pedido pendente precisa de aprovação de chefia/admin primeiro,
+      // independente do destino final. Somente eles podem avançar o pedido.
+      const setor = (order.sectorLabel || order.sector_label || order.sector || "Setor") as string;
+      notifyRoles = ["admin", "chefia"];
+      notification = {
+        title: "📋 Novo Pedido",
+        body: `Pedido de ${setor} aguardando aprovação`,
+        tag: `order-new-${order.id}`,
+        url: "/",
+      };
     } else if (type === "UPDATE" && order.status === "aprovado" && oldRec?.status !== "aprovado") {
       if (destinoRole === "comprador") {
         notifyRoles = ["comprador"];
