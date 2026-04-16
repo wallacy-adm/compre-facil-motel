@@ -1,8 +1,9 @@
-// v5.0 — badge: SW é fonte única de verdade (notificationclose + RESET_BADGE)
+// v4.0 — badge via IndexedDB (contador preciso, independente de notificações abertas)
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(clients.claim()));
 
 // ── BADGE COUNTER via IndexedDB ──────────────────────────────────────────
+// Mantém contador persistente no SW — não depende de getNotifications()
 function openBadgeDB() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open('cf_badge_db', 1);
@@ -52,12 +53,12 @@ async function updateBadge(delta) {
 self.addEventListener('push', event => {
   if (!event.data) return;
   let data;
-  try { data = event.data.json(); } catch { data = { title: 'CompraF\u00e1cil', body: event.data.text() }; }
+  try { data = event.data.json(); } catch { data = { title: 'CompraFácil', body: event.data.text() }; }
   const url = data.url || '/';
 
   event.waitUntil(
     updateBadge(+1).then(() =>
-      self.registration.showNotification(data.title || 'CompraF\u00e1cil', {
+      self.registration.showNotification(data.title || 'CompraFácil', {
         body: data.body || '',
         icon: '/icon-192x192.png',
         badge: '/icon-192x192.png',
@@ -94,8 +95,24 @@ self.addEventListener('notificationclose', event => {
   event.waitUntil(updateBadge(-1));
 });
 
-// ── RESET BADGE (app aberto pelo usuário) ────────────────────────────────
+// ── BADGE MESSAGES ───────────────────────────────────────────────────────
+// SET_BADGE  → define a contagem exata (ex: 3 pedidos pendentes)
+// RESET_BADGE → zera (só no logout)
 self.addEventListener('message', event => {
+  if (event.data?.type === 'SET_BADGE') {
+    const count = Math.max(0, Number(event.data.count) || 0);
+    event.waitUntil(
+      saveBadgeCount(count).then(async () => {
+        try {
+          if (count === 0) {
+            if ('clearAppBadge' in self.navigator) await self.navigator.clearAppBadge();
+          } else {
+            if ('setAppBadge' in self.navigator) await self.navigator.setAppBadge(count);
+          }
+        } catch {}
+      })
+    );
+  }
   if (event.data?.type === 'RESET_BADGE') {
     event.waitUntil(
       saveBadgeCount(0).then(async () => {
