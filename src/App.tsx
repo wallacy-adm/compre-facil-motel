@@ -1128,6 +1128,19 @@ function AppInner() {
     return ()=>{ document.removeEventListener('visibilitychange', onVisible); };
   },[]);
 
+  // ── Re-fetch pedidos ao voltar ao foco + polling (fallback para realtime) ──
+  useEffect(()=>{
+    if (!session) return;
+    const refetch = async () => {
+      const { data } = await supabase.from("orders").select("*").order("inserted_at", { ascending: true });
+      if (data) setOrders(data);
+    };
+    const onVisible = () => { if(document.visibilityState==='visible') refetch(); };
+    document.addEventListener('visibilitychange', onVisible);
+    const timer = setInterval(refetch, 15000);
+    return ()=>{ document.removeEventListener('visibilitychange', onVisible); clearInterval(timer); };
+  },[session]);
+
   if (!session) return <LoginScreen users={users} onLogin={setSession} showToast={showToast} toast={toast}/>;
 
   const user = users.find(u=>u.id===session.id)||session;
@@ -1446,7 +1459,9 @@ function ChefiaScreen({ user, users, orders, setOrders, onLogout, showToast, toa
     setOrders(p=>p.map(o=>o.id===orderId?{...o,status:newStatus,items:updatedItems}:o));
     if (newStatus==="aprovado") {
       showToast("Pedido aprovado! ✅");
-      setTimeout(()=>setTab("compras"), 400);
+      // Só navega para compras quando não houver mais nenhum pedido pendente
+      const remaining = orders.filter(o => o.id !== orderId && o.status === "pendente").length;
+      if (remaining === 0) setTimeout(()=>setTab("compras"), 400);
     } else {
       showToast("Todos os itens foram recusados.","error");
       setTimeout(()=>setTab("recusados"), 400);
