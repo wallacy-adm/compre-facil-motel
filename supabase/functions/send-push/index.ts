@@ -1,4 +1,4 @@
-// v3.6 — INSERT+pendente SEMPRE notifica admin+chefia (fix: destino=comprador não notificava aprovadores)
+// v3.7 — INSERT+aprovado+chefia notifica chefia (fix: estoque→chefia criava pedido aprovado mas não notificava)
 import webpush from "npm:web-push@3.6.7";
 
 const VAPID_PUBLIC_KEY = Deno.env.get("VAPID_PUBLIC_KEY") ?? "";
@@ -160,7 +160,6 @@ Deno.serve(async (req) => {
 
     console.log(`[send-push] Evento recebido: type=${type} order.id=${order.id} status=${order.status} destino=${order.destino}`);
 
-    // Resolve destino: pode ser role string ("comprador","chefia") ou user ID
     const knownRoles = ["comprador", "chefia", "admin", "estoque", "construcao", "manutencao"];
     let destinoRole = order.destino as string;
     if (!knownRoles.includes(destinoRole)) {
@@ -181,21 +180,29 @@ Deno.serve(async (req) => {
     let notification: { title: string; body: string; tag: string; url: string } | null = null;
 
     if (type === "INSERT" && order.status === "pendente") {
-      // REGRA: todo pedido pendente precisa de aprovação de chefia/admin primeiro,
-      // independente do destino final. Somente eles podem avançar o pedido.
       const setor = (order.sectorLabel || order.sector_label || order.sector || "Setor") as string;
       notifyRoles = ["admin", "chefia"];
       notification = {
-        title: "📋 Novo Pedido",
+        title: "\u{1F4CB} Novo Pedido",
         body: `Pedido de ${setor} aguardando aprovação`,
         tag: `order-new-${order.id}`,
+        url: "/",
+      };
+    } else if (type === "INSERT" && order.status === "aprovado" && destinoRole === "chefia") {
+      // Estoque → chefia direto (já aprovado, sem aprovação intermediária)
+      const setor = (order.sectorLabel || order.sector_label || order.sector || "Setor") as string;
+      notifyRoles = ["chefia"];
+      notification = {
+        title: "\u{1F6D2} Novo Pedido de Compra",
+        body: `Pedido de ${setor} pronto para compra`,
+        tag: `order-buy-${order.id}`,
         url: "/",
       };
     } else if (type === "UPDATE" && order.status === "aprovado" && oldRec?.status !== "aprovado") {
       if (destinoRole === "comprador") {
         notifyRoles = ["comprador"];
         notification = {
-          title: "✅ Pedido Aprovado",
+          title: "\u2705 Pedido Aprovado",
           body: "Itens aprovados aguardando compra",
           tag: `order-buy-${order.id}`,
           url: "/",
@@ -203,7 +210,7 @@ Deno.serve(async (req) => {
       } else if (destinoRole === "chefia") {
         notifyRoles = ["chefia"];
         notification = {
-          title: "✅ Pedido para Chefia",
+          title: "\u2705 Pedido para Chefia",
           body: "Pedido aprovado aguardando compra",
           tag: `order-chefia-${order.id}`,
           url: "/",
