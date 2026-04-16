@@ -115,11 +115,22 @@ async function sendNtfyNotification(
     headers.Authorization = `Bearer ${NTFY_PUBLISHER_TOKEN}`;
   }
 
-  const res = await fetch(`${NTFY_BASE_URL}`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(payload),
-  });
+  const baseUrl = NTFY_BASE_URL.endsWith("/") ? NTFY_BASE_URL : `${NTFY_BASE_URL}/`;
+  console.log(`[send-push][ntfy] POST ${baseUrl} topic=${sanitizedTopic} hasToken=${Boolean(NTFY_PUBLISHER_TOKEN)}`);
+
+  let res: Response;
+  try {
+    res = await fetch(baseUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+      redirect: "follow",
+    });
+  } catch (fetchErr) {
+    const msg = `[send-push][ntfy] fetch lançou erro topic=${sanitizedTopic} err=${String(fetchErr)}`;
+    console.error(msg);
+    throw new Error(msg);
+  }
 
   if (!res.ok) {
     const errText = await res.text().catch(() => "");
@@ -128,6 +139,7 @@ async function sendNtfyNotification(
     throw new Error(msg);
   }
 
+  await res.text().catch(() => "");
   console.log(`[send-push][ntfy] Enviado: topic=${sanitizedTopic}`);
 }
 
