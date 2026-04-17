@@ -1046,7 +1046,6 @@ function AppInner() {
               navigator.vibrate?.([300,100,300]);
               showToastRef.current("✅ Pedido aprovado aguarda sua compra", "success");
             }
-          }
           } else if (o.status==="concluido" && old?.status !== "concluido") {
             // Alerta para setor que criou: pedido concluído pelo comprador
             if (String(o.userId) === String(s.id)) {
