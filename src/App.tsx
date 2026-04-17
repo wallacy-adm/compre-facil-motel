@@ -1014,14 +1014,20 @@ function AppInner() {
           const s = sessionRef.current; const u = usersRef.current;
           if (!s) return;
           const me = u.find(v=>v.id===s.id)||s;
-          const o = payload.new;
+                    const o = payload.new;
+          const setor = o.sectorLabel||o.sector_label||"setor";
+          // Alerta in-app: pendente → admin/chefia; aprovado+chefia → chefia (estoque direto)
           const shouldAlert =
             ((isAdmin(me)||isChefia(me)) && o.status==="pendente") ||
+            (isChefia(me) && o.status==="aprovado" && o.destino==="chefia") ||
             (isComprador(me) && o.status==="pendente" && (o.destino===String(me.id) || o.destino==="comprador"));
           if (shouldAlert) {
             playAlertSound();
             navigator.vibrate?.([300,100,300,100,300]);
-            showToastRef.current(`📋 Novo pedido — ${o.sectorLabel||o.sector_label||"setor"}`, "success");
+            const msg = (o.status==="aprovado" && o.destino==="chefia")
+              ? `\u{1F6D2} Pedido de compra — ${setor}`
+              : `\u{1F4CB} Novo pedido — ${setor}`;
+            showToastRef.current(msg, "success");
           }
         } else if (payload.eventType==="UPDATE") {
           setOrders(p=>p.map(o=>o.id===payload.new.id ? payload.new : o));
@@ -1041,11 +1047,22 @@ function AppInner() {
               showToastRef.current("✅ Pedido aprovado aguarda sua compra", "success");
             }
           }
+          } else if (o.status==="concluido" && old?.status !== "concluido") {
+            // Alerta para setor que criou: pedido concluído pelo comprador
+            if (String(o.userId) === String(s.id)) {
+              playAlertSound();
+              showToastRef.current("\u{1F3AF} Seu pedido foi concluído!", "success");
+            }
+          }
         } else if (payload.eventType==="DELETE") {
           setOrders(p=>p.filter(o=>o.id!==payload.old.id));
         }
       })
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") console.log("[Realtime] Canal conectado ✅");
+        else if (status === "CHANNEL_ERROR") console.warn("[Realtime] Erro no canal — o Supabase tentará reconectar automaticamente.");
+        else if (status === "TIMED_OUT") console.warn("[Realtime] Canal timeout — aguardando reconexão...");
+      });
     return ()=>{ supabase.removeChannel(channel); };
   },[]);
 
@@ -1067,7 +1084,12 @@ function AppInner() {
       }
       if (changed.length>0) {
         supabase.from("orders").upsert(changed)
-          .then(({error})=>{ if(error) console.error("[Supabase] upsert orders:",error); });
+          .then(({error})=>{ 
+            if(error){
+              console.error("[Supabase] upsert orders:",error);
+              showToastRef.current("\u26A0\uFE0F Erro ao salvar. Verifique a conex\u00E3o.","error");
+            }
+          });
       }
       return next;
     });
@@ -1080,7 +1102,12 @@ function AppInner() {
       const changed = next.filter(u=>{ const p=prevMap[u.id]; return !p||JSON.stringify(p)!==JSON.stringify(u); });
       if (changed.length>0) {
         supabase.from("users").upsert(changed)
-          .then(({error})=>{ if(error) console.error("[Supabase] upsert users:",error); });
+          .then(({error})=>{ 
+            if(error){
+              console.error("[Supabase] upsert users:",error);
+              showToastRef.current("\u26A0\uFE0F Erro ao salvar usu\u00E1rio. Verifique a conex\u00E3o.","error");
+            }
+          });
       }
       return next;
     });
