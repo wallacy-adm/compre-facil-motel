@@ -1,4 +1,4 @@
-// v3.7 — INSERT+aprovado+chefia notifica chefia (fix: estoque→chefia criava pedido aprovado mas não notificava)
+// v3.8 — blindagem total: timeout ntfy 10s + retry WebPush 5xx + alerta in-app chefia INSERT+aprovado
 import webpush from "npm:web-push@3.6.7";
 
 const VAPID_PUBLIC_KEY = Deno.env.get("VAPID_PUBLIC_KEY") ?? "";
@@ -19,7 +19,7 @@ if (!VAPID_PRIVATE_KEY) startupErrors.push("VAPID_PRIVATE_KEY não configurada")
 if (startupErrors.length > 0) {
   console.error("[send-push] CONFIGURAÇÃO INVÁLIDA:", startupErrors.join(" | "));
 } else {
-  console.log("[send-push] Iniciando com configuração válida");
+  console.log("[send-push] v3.8 — iniciando com configuração válida");
 }
 
 const hasVapidConfig = Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
@@ -89,6 +89,7 @@ async function dbDelete(path: string) {
   }
 }
 
+// ── Ntfy: POST JSON com timeout de 10 segundos ────────────────────────────
 async function sendNtfyNotification(
   topic: string,
   title: string,
@@ -116,7 +117,11 @@ async function sendNtfyNotification(
   }
 
   const baseUrl = NTFY_BASE_URL.endsWith("/") ? NTFY_BASE_URL : `${NTFY_BASE_URL}/`;
-  console.log(`[send-push][ntfy] POST ${baseUrl} topic=${sanitizedTopic} hasToken=${Boolean(NTFY_PUBLISHER_TOKEN)}`);
+  console.log(`[send-push][ntfy] POST ${baseUrl} topic=${sanitizedTopic}`);
+
+  // Timeout de 10s para evitar hang
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10_000);
 
   let res: Response;
   try {
@@ -125,35 +130,73 @@ async function sendNtfyNotification(
       headers,
       body: JSON.stringify(payload),
       redirect: "follow",
+      signal: controller.signal,
     });
   } catch (fetchErr) {
-    const msg = `[send-push][ntfy] fetch lançou erro topic=${sanitizedTopic} err=${String(fetchErr)}`;
+    const isTimeout = (fetchErr as Error)?.name === "AbortError";
+    const msg = isTimeout
+      ? `[send-push][ntfy] Timeout (10s) topic=${sanitizedTopic}`
+      : `[send-push][ntfy] fetch erro topic=${sanitizedTopic} err=${String(fetchErr)}`;
     console.error(msg);
     throw new Error(msg);
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   if (!res.ok) {
     const errText = await res.text().catch(() => "");
-    const msg = `[send-push][ntfy] Falha: HTTP ${res.status} topic=${sanitizedTopic} err=${errText}`;
+    const msg = `[send-push][ntfy] HTTP ${res.status} topic=${sanitizedTopic} err=${errText}`;
     console.error(msg);
     throw new Error(msg);
   }
 
-  await res.text().catch(() => "");
-  console.log(`[send-push][ntfy] Enviado: topic=${sanitizedTopic}`);
+  await res.text().catch(() => ""); // drain body
+  console.log(`[send-push][ntfy] ✅ Enviado: topic=${sanitizedTopic}`);
+}
+
+// ── WebPush com retry em erros 5xx (transientes) ──────────────────────────
+async function sendWebPushWithRetry(
+  subscription: webpush.PushSubscription,
+  payload: string,
+  options: webpush.RequestOptions,
+  maxRetries = 2,
+): Promise<void> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      await webpush.sendNotification(subscription, payload, options);
+      return; // sucesso
+    } catch (err: unknown) {
+      const status = (err as { statusCode?: number })?.statusCode;
+      // 404/410 = subscription morta — não retry, propaga imediatamente
+      if (status === 404 || status === 410) throw err;
+      // 5xx = erro transiente — faz retry com backoff
+      if (status && status >= 500 && attempt < maxRetries) {
+        const delay = (attempt + 1) * 1000;
+        console.warn(`[send-push][webpush] HTTP ${status} — retry ${attempt + 1}/${maxRetries} em ${delay}ms`);
+        await new Promise(r => setTimeout(r, delay));
+        lastErr = err;
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
 }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
+  const reqId = crypto.randomUUID().slice(0, 8); // trace ID curto
+
   try {
     if (req.headers.get("x-webhook-secret") !== WEBHOOK_SECRET) {
-      console.warn("[send-push] Webhook secret inválido");
+      console.warn(`[send-push][${reqId}] Webhook secret inválido`);
       return new Response("Unauthorized", { status: 401 });
     }
 
     if (!hasDbConfig()) {
-      return new Response(JSON.stringify({ error: "Edge function sem configuração de banco (SUPABASE_URL/SERVICE_KEY)" }), {
+      return new Response(JSON.stringify({ error: "Edge function sem configuração de banco" }), {
         status: 503,
         headers: { ...cors, "Content-Type": "application/json" },
       });
@@ -170,8 +213,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`[send-push] Evento recebido: type=${type} order.id=${order.id} status=${order.status} destino=${order.destino}`);
+    console.log(`[send-push][${reqId}] type=${type} id=${order.id} status=${order.status} destino=${order.destino}`);
 
+    // Resolve destino: pode ser role string ou user ID numérico
     const knownRoles = ["comprador", "chefia", "admin", "estoque", "construcao", "manutencao"];
     let destinoRole = order.destino as string;
     if (!knownRoles.includes(destinoRole)) {
@@ -184,7 +228,7 @@ Deno.serve(async (req) => {
         destinoRole = roles.includes("comprador") ? "comprador" :
                       roles.includes("chefia") ? "chefia" :
                       roles[0] || "unknown";
-        console.log(`[send-push] destino resolvido: ID ${order.destino} -> role ${destinoRole}`);
+        console.log(`[send-push][${reqId}] destino resolvido: ID ${order.destino} -> ${destinoRole}`);
       }
     }
 
@@ -192,6 +236,7 @@ Deno.serve(async (req) => {
     let notification: { title: string; body: string; tag: string; url: string } | null = null;
 
     if (type === "INSERT" && order.status === "pendente") {
+      // Novo pedido pendente → admin + chefia precisam aprovar
       const setor = (order.sectorLabel || order.sector_label || order.sector || "Setor") as string;
       notifyRoles = ["admin", "chefia"];
       notification = {
@@ -201,7 +246,7 @@ Deno.serve(async (req) => {
         url: "/",
       };
     } else if (type === "INSERT" && order.status === "aprovado" && destinoRole === "chefia") {
-      // Estoque → chefia direto (já aprovado, sem aprovação intermediária)
+      // Estoque → chefia direto (sem aprovação intermediária)
       const setor = (order.sectorLabel || order.sector_label || order.sector || "Setor") as string;
       notifyRoles = ["chefia"];
       notification = {
@@ -211,6 +256,7 @@ Deno.serve(async (req) => {
         url: "/",
       };
     } else if (type === "UPDATE" && order.status === "aprovado" && oldRec?.status !== "aprovado") {
+      // Admin/chefia aprovou → notifica destinatário final
       if (destinoRole === "comprador") {
         notifyRoles = ["comprador"];
         notification = {
@@ -231,10 +277,13 @@ Deno.serve(async (req) => {
     }
 
     if (!notification || notifyRoles.length === 0) {
+      console.log(`[send-push][${reqId}] skipped: nenhuma condição matched`);
       return new Response(JSON.stringify({ skipped: "no matching condition" }), {
         headers: { ...cors, "Content-Type": "application/json" },
       });
     }
+
+    console.log(`[send-push][${reqId}] notifyRoles=${notifyRoles.join(",")} title="${notification.title}"`);
 
     const users = await dbGet("users?select=id,role,roles,ntfy_topic&deleted=eq.false");
     const targetUsers = (Array.isArray(users) ? users : []).filter((user: Record<string, unknown>) => {
@@ -244,6 +293,7 @@ Deno.serve(async (req) => {
     const targetIds = targetUsers.map((user: Record<string, unknown>) => user.id as string);
 
     if (targetIds.length === 0) {
+      console.log(`[send-push][${reqId}] skipped: nenhum usuário alvo encontrado`);
       return new Response(JSON.stringify({ skipped: "no target users" }), {
         headers: { ...cors, "Content-Type": "application/json" },
       });
@@ -266,17 +316,17 @@ Deno.serve(async (req) => {
     let failed = 0;
 
     if (!hasVapidConfig) {
-      console.warn("[send-push] Canal1 WebPush IGNORADO: VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY não configuradas");
+      console.warn(`[send-push][${reqId}] Canal1 WebPush IGNORADO: VAPID não configurado`);
     } else {
       const results = await Promise.allSettled(
         subs.map(async (row: Record<string, unknown>) => {
           try {
-            await webpush.sendNotification(row.subscription as webpush.PushSubscription, payload, pushOptions);
+            await sendWebPushWithRetry(row.subscription as webpush.PushSubscription, payload, pushOptions);
           } catch (err: unknown) {
             const status = (err as { statusCode?: number })?.statusCode;
             if (status === 404 || status === 410) {
               const id = row.id as string;
-              console.log(`[send-push] Removendo subscription morta (${status}): ${id}`);
+              console.log(`[send-push][${reqId}] Removendo subscription morta (${status}): ${id}`);
               await dbDelete(`push_subscriptions?id=eq.${id}`);
             }
             throw err;
@@ -286,6 +336,9 @@ Deno.serve(async (req) => {
 
       sent = results.filter((r) => r.status === "fulfilled").length;
       failed = results.filter((r) => r.status === "rejected").length;
+      if (failed > 0) {
+        console.warn(`[send-push][${reqId}] WebPush: ${failed} falhou(aram) de ${subs.length}`);
+      }
     }
 
     const clickUrl = resolveClickUrl(notification.url, req);
@@ -303,14 +356,15 @@ Deno.serve(async (req) => {
     const ntfyFailed = ntfyResults.filter((r) => r.status === "rejected").length;
 
     console.log(
-      `[send-push] Canal1 WebPush=${sent}/${subs.length} | Canal2 ntfy=${ntfySent}/${ntfyTargets.length} | order=${order.id}`,
+      `[send-push][${reqId}] ✅ Canal1 WebPush=${sent}/${subs.length} | Canal2 ntfy=${ntfySent}/${ntfyTargets.length} | order=${order.id}`,
     );
 
     return new Response(
       JSON.stringify({
+        reqId,
         sent: sent + ntfySent,
         failed: failed + ntfyFailed,
-        canal1: { sent, failed },
+        canal1: { sent, failed, total: subs.length },
         canal2: { sent: ntfySent, failed: ntfyFailed, targets: ntfyTargets.length },
       }),
       {
@@ -318,7 +372,7 @@ Deno.serve(async (req) => {
       },
     );
   } catch (e) {
-    console.error("[send-push] Erro:", e);
+    console.error(`[send-push][${reqId}] Erro não tratado:`, e);
     return new Response(JSON.stringify({ error: String(e) }), {
       status: 500,
       headers: { ...cors, "Content-Type": "application/json" },
