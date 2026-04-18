@@ -226,7 +226,9 @@ Deno.serve(async (req) => {
 
     if (type === "INSERT" && order.status === "pendente") {
       // Novo pedido → chefia/admin para aprovação
-      notifyRoles = ["admin", "chefia"];
+      notifyRoles = destinoRole === "comprador"
+        ? ["admin", "chefia", "comprador"]
+        : ["admin", "chefia"];
       notification = {
         title: "\u{1F4CB} Novo Pedido",
         body: `Pedido de ${setor} aguardando aprovação`,
