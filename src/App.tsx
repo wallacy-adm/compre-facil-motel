@@ -890,6 +890,7 @@ function AppInner() {
   const [users,    setUsers]    = useState([]);
   const [userNtfyTopic, setUserNtfyTopic] = useState<string | null>(null);
   const [orders,   setOrders]   = useState([]);
+  const [booting,  setBooting]  = useState(true);
   const [lightbox, setLightbox] = useState(null);
   const [toast,    setToast]    = useState(null);
   const originalTitleRef = useRef(typeof document !== "undefined" ? document.title : "CompraFácil");
@@ -995,6 +996,7 @@ function AppInner() {
       }
       if (ordersErr) { console.error("[Supabase] boot orders:", ordersErr); }
       else { setOrders(ordersData || []); }
+      setBooting(false);
     }
     boot();
   },[]);
@@ -1184,6 +1186,7 @@ function AppInner() {
   },[session]);
 
   if (!session) return <LoginScreen users={users} onLogin={setSession} showToast={showToast} toast={toast}/>;
+  if (booting)  return <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#0D1117",color:"#0ABFCA",flexDirection:"column",gap:"14px"}}><div style={{width:"38px",height:"38px",border:"3px solid #0ABFCA33",borderTop:"3px solid #0ABFCA",borderRadius:"50%",animation:"spin 1s linear infinite"}}/><span style={{fontSize:"14px",opacity:.7}}>Carregando pedidos…</span></div>;
 
   const user = users.find(u=>u.id===session.id)||session;
   const props = { user, users, setUsers:dbSetUsers, orders, setOrders:dbSetOrders, onLogout:logout, showToast, toast, lightbox, setLightbox };
@@ -1349,6 +1352,11 @@ function AdminScreen({ user, users, setUsers, orders, setOrders, onLogout, showT
   const [tab, setTab]           = useState("pedidos");
   const [userModal, setUserModal] = useState(null);
   const [confirmModal, setConfirmModal] = useState(null);
+  const prevPendingRef = useRef(pendingApproval);
+  useEffect(()=>{
+    if (pendingApproval > prevPendingRef.current) setTab("pedidos");
+    prevPendingRef.current = pendingApproval;
+  },[pendingApproval]);
 
   const recusadosCount = useMemo(()=>{
     let count=0;
@@ -1477,6 +1485,7 @@ function ChefiaScreen({ user, users, orders, setOrders, onLogout, showToast, toa
   const [openOrder, setOpenOrder] = useState(null);
   const togglingRef               = useRef(new Set());
   const justApprovedRef           = useRef(false);
+  const prevPendingRef            = useRef(pendingApproval);
 
   const recusadosCount = useMemo(()=>{
     let count=0;
@@ -1510,6 +1519,12 @@ function ChefiaScreen({ user, users, orders, setOrders, onLogout, showToast, toa
       setTimeout(()=>setTab("recusados"), 400);
     }
   },[setOrders,showToast]);
+
+  // Auto: abre Aprovação quando chega novo pedido pendente
+  useEffect(()=>{
+    if (pendingApproval > prevPendingRef.current) setTab("aprovacao");
+    prevPendingRef.current = pendingApproval;
+  },[pendingApproval]);
 
   // Backup: useEffect reage ao pendingApproval (estado real apos render)
   // Garante navegacao para compras quando todos os pedidos sao aprovados
